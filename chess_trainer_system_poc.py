@@ -170,11 +170,20 @@ def format_analysis_block(summary: Dict[str, Any]) -> str:
     )
 
 if __name__ == "__main__":
+    input_dir = Path(__file__).resolve().parent / "input"
+    parser = argparse.ArgumentParser(description="Analyze a chess move with Stockfish.")
+    parser.add_argument("--fen-file", default=input_dir / "fen.txt", help="File containing the FEN position.")
+    parser.add_argument("--move-file", default=input_dir / "move.txt", help="File containing the move in UCI format.")
+    parser.add_argument("--prompt-file", default=input_dir / "prompt.txt", help="File containing the coach prompt.")
+    args = parser.parse_args()
 
-    sample_fen = ""
-    sample_move = ""
+    try:
+        fen = read_input_file(args.fen_file)
+        move = read_input_file(args.move_file)
+        prompt = read_input_file(args.prompt_file)
+    except OSError as err:
+        print(f"Error reading input file: {err}", file=sys.stderr)
+        sys.exit(1)
 
-    prompt="The user wants to know why the engine's move is better than theirs. Explain it like a chess coach."
-
-    generate_prompt(sample_fen, sample_move, prompt)
+    generate_prompt(fen, move, prompt)
     

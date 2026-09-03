@@ -84,19 +84,21 @@ export default function ChessTrainerSystem(): React.ReactElement {
     const updateMoveHistory = (newMoveSan: string): void => {
         setMoveHistory((prev) => {
             const nextHistory = [...prev];
-            const isWhiteMove = gameRef.current.turn() === "b";
+            const lastRow = nextHistory[nextHistory.length - 1];
 
-            if (isWhiteMove) {
+            if (!lastRow || (lastRow.white && lastRow.black)) {
                 nextHistory.push({
                     turnNumber: nextHistory.length + 1,
                     white: newMoveSan,
                     black: ""
                 });
             } else {
-                const lastTurn = { ...nextHistory[nextHistory.length - 1] };
-                lastTurn.black = newMoveSan;
-                nextHistory[nextHistory.length - 1] = lastTurn;
+                nextHistory[nextHistory.length - 1] = {
+                    ...lastRow,
+                    black: newMoveSan
+                };
             }
+
             return nextHistory;
         });
     };
@@ -157,7 +159,7 @@ export default function ChessTrainerSystem(): React.ReactElement {
                 <button onClick={() => startGame("white")}>White</button>
                 <button onClick={() => startGame("black")}>Black</button>
                 <button onClick={() => startGame("random")}>Random</button>
-                {userColor && <span style={{ marginLeft: "15px" }}>Color: <b>{userColor}</b></span>}
+                {userColor ? <span style={{ marginLeft: "15px" }}>Color : <b>{userColor}</b></span> : <span style={{ marginLeft: "15px" }}> Select a color to start a game</span>}
             </div>
 
             <div style={{ display: "flex", gap: "25px", alignItems: "flex-start" }}>
@@ -193,7 +195,7 @@ export default function ChessTrainerSystem(): React.ReactElement {
                         options={{
                             position: game.fen(),
                             boardOrientation: userColor || "white",
-                            onPieceDrop: ({sourceSquare, targetSquare}) => {
+                            onPieceDrop: ({ sourceSquare, targetSquare }) => {
                                 return onDrop(sourceSquare as Square, targetSquare as Square);
                             }
                         }}

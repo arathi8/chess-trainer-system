@@ -1,9 +1,46 @@
 import os
+import shutil
 import sys
+import argparse
+from pathlib import Path
 from typing import Optional, Dict, Any
 import chess
 import chess.engine
 import pyperclip
+
+
+def find_stockfish() -> str:
+    """Find the Stockfish executable bundled with the project or on PATH."""
+    configured_path = os.environ.get("STOCKFISH_PATH")
+    if configured_path:
+        engine_path = Path(configured_path).expanduser()
+        if engine_path.is_file():
+            return str(engine_path)
+        raise FileNotFoundError(f"STOCKFISH_PATH does not point to a file: {engine_path}")
+
+    project_dir = Path(__file__).resolve().parent
+    bundled_candidates = (
+        project_dir / "stockfish" / "stockfish-windows-x86-64-avx2.exe",
+        project_dir / "stockfish" / "stockfish",
+        project_dir / "stockfish.exe",
+        Path("/usr/games/stockfish"),
+    )
+    for engine_path in bundled_candidates:
+        if engine_path.is_file():
+            return str(engine_path)
+
+    path_engine = shutil.which("stockfish")
+    if path_engine:
+        return path_engine
+
+    raise FileNotFoundError(
+        "Stockfish executable not found. Set STOCKFISH_PATH or place it in the stockfish folder."
+    )
+
+
+def read_input_file(file_path: str) -> str:
+    """Read one POC input parameter from a UTF-8 text file."""
+    return Path(file_path).read_text(encoding="utf-8").strip()
 
 def generate_prompt(
     fen: str,
@@ -16,9 +53,7 @@ def generate_prompt(
     Analyzes a chess position before and after a user's move,
     ensuring a deep evaluation line, and returns formatted LLM prompts.
     """
-    stockfish_path = "/usr/games/stockfish"
-    if not os.path.exists(stockfish_path):
-        stockfish_path = "stockfish"
+    stockfish_path = find_stockfish()
 
     board = parse_board(fen)
     user_move = parse_move(board, move)

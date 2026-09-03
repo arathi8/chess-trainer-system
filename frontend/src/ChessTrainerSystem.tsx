@@ -200,7 +200,7 @@ export default function ChessTrainerSystem(): React.ReactElement {
                             }
                         }}
                     />
-                    {isEngineThinking && <p style={{ textAlign: "center", color: "#666" }}>Engine pensando...</p>}
+                    {isEngineThinking && <p style={{ textAlign: "center", color: "#666" }}>Engine thinking...</p>}
                 </div>
 
                 {/* Análise */}

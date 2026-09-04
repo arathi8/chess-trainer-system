@@ -224,3 +224,8 @@ __marimo__/
 
 # stockfish
 stockfish/
+
+# file tests
+input/fen/*
+input/move/*
+output/*

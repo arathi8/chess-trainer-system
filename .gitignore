@@ -222,3 +222,10 @@ __marimo__/
 
 # Generated using ignr.py - github.com/Antrikshy/ignr.py
 
+# stockfish
+stockfish/
+
+# file tests
+input/fen/*
+input/move/*
+output/*

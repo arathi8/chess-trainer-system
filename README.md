@@ -1,6 +1,8 @@
+ 
+
 # ♟️ Chess Trainer System (Sistema Treinador de Xadrez)
 
-Sistema de treino e análise semântica de xadrez desenvolvido para o projeto **MC857A – IC UNICAMP (2026.2)**. 
+Sistema de treino e análise semântica de xadrez desenvolvido para o projeto **MC857A – IC UNICAMP (2026.2)**.
 
 Esta versão mínima integra uma interface SPA em **React (TypeScript)** com um backend em **FastAPI (Python)** conectado ao binário do **Stockfish**. O usuário escolhe a cor inicial (Brancas, Pretas ou Aleatório), joga contra a engine com regras validadas localmente e solicita a avaliação do treinador da posição atual diretamente no painel lateral.
 
@@ -42,10 +44,10 @@ uvicorn server:app --reload --port 8000
 cd frontend
 
 # Instale as dependências via Yarn
-yarn install
+yarn install #npm install
 
 # Inicie o servidor de desenvolvimento
-yarn dev
+yarn dev #npm run dev
 ```
 
 ## 🎮 Como Usar a Aplicação
@@ -54,4 +56,4 @@ Selecione a opção desejada na barra superior: White, Black ou Random.
 
 A cada movimento seu, o backend calculará a resposta da máquina e devolverá o lance no tabuleiro.
 
-Clique em "Request Analysis" para enviar o FEN da posição atual ao Stockfish (profundidade 20) e exibir o prompt formatado com as variantes e o score da posição. 
+Clique em "Request Analysis" para enviar o FEN da posição atual ao Stockfish (profundidade 20) e exibir o prompt formatado com as variantes e o score da posição.

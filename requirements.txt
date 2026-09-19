@@ -1,2 +1,0 @@
-chess==1.11.2
-pyperclip==1.11.0

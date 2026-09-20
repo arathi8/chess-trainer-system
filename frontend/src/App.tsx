@@ -46,12 +46,10 @@ function App() {
     setUserColor(color)
     
     if (pendingPgn) {
-      // Carregar PGN e reconstruir histórico
       const newGame = new Chess()
       try {
         newGame.loadPgn(pendingPgn)
         
-        // Reconstruir histórico com FENs
         const tempGame = new Chess()
         const history = newGame.history({ verbose: true })
         const reconstructedHistory: MoveRow[] = []
@@ -86,7 +84,6 @@ function App() {
       }
       setPendingPgn(null)
     } else {
-      // Novo jogo vazio
       setGame(new Chess())
       setMoveHistory([])
     }

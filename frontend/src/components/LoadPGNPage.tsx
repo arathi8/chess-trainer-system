@@ -61,12 +61,10 @@ export default function LoadPGNPage({ onPGNLoaded, onBack }: LoadPGNPageProps) {
       return
     }
     
-    // Validar PGN antes de carregar
     try {
       const testGame = new Chess()
       testGame.loadPgn(pgnText)
       
-      // Se chegou aqui, o PGN é válido
       setError('')
       onPGNLoaded(pgnText)
     } catch (err) {

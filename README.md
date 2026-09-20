@@ -1,18 +1,27 @@
- 
+# ♟️ Chess Trainer System
 
-# ♟️ Chess Trainer System (Sistema Treinador de Xadrez)
+An intelligent chess training and semantic analysis system developed for the **MC857A – IC UNICAMP (2026.2)** project.
 
-Sistema de treino e análise semântica de xadrez desenvolvido para o projeto **MC857A – IC UNICAMP (2026.2)**.
+This application provides a modern Single Page Application (SPA) built with **React (TypeScript)** and a **FastAPI (Python)** backend that natively runs **Stockfish** engine analysis. 
 
-Esta versão mínima integra uma interface SPA em **React (TypeScript)** com um backend em **FastAPI (Python)** conectado ao binário do **Stockfish**. O usuário escolhe a cor inicial (Brancas, Pretas ou Aleatório), joga contra a engine com regras validadas localmente e solicita a avaliação do treinador da posição atual diretamente no painel lateral.
+The system goes beyond raw engine evaluation (centipawns). It classifies the player's move technically (e.g., *Blunder*, *Inaccuracy*, *Best Move*) and then uses an LLM prompt generator to act as a chess coach, explaining the strategic reasoning behind the engine's assessment in a human-readable format.
 
 ---
 
-## 📋 Pré-requisitos
+## ✨ Features
 
-* **Node.js** (v18+) e gerenciador de pacotes **Yarn**
+* **Real-time Technical Classification:** Assigns accuracy badges (!, ?, ??) to user moves based on the mathematical drop in win probability.
+* **Semantic Coach Feedback:** Generates contextual LLM prompts that compare the user's move with the optimal engine line.
+* **Synchronous Play:** Play as White, Black, or Random against the Stockfish engine, with automated engine responses handling turn management.
+* **History & Review Mode:** Navigate through the algebraic move history (PGN format) to review previous board states.
+* 
+---
+
+## 📋 Prerequisites
+
+* **Node.js** (v18+) and **Yarn** package manager
 * **Python 3.10+**
-* **Stockfish Engine** instalado no sistema operacional:
+* **Stockfish Engine** installed natively on your OS:
   * **Ubuntu/Debian:**
     ```bash
     sudo apt-get update && sudo apt-get install -y stockfish xclip
@@ -21,39 +30,56 @@ Esta versão mínima integra uma interface SPA em **React (TypeScript)** com um 
     ```bash
     brew install stockfish
     ```
-  * **Windows:** Baixe o binário compilado e adicione-o ao `PATH` do sistema.
+  * **Windows:** Download the compiled binary and add it to your system's `PATH`.
 
-## 🚀 Como Executar
+---
+
+## 🚀 How to Run
+
+### 1. Start the Backend (Python / FastAPI)
+Open a dedicated terminal window for the server:
 
 ```bash
-# Entre no diretório do backend
+# Navigate to the backend directory
 cd backend
 
-# Crie e ative o ambiente virtual
+# Create and activate a virtual environment
 python3 -m venv .venv
-source .venv/bin/activate       # No Windows: .venv\Scripts\activate
+source .venv/bin/activate       # On Windows use: .venv\Scripts\activate
 
-# Atualize o instalador e instale os pacotes necessários
+# Upgrade pip and install required packages
 pip install --upgrade pip
 pip install -r requirements.txt
 
-# Inicie o servidor FastAPI
-uvicorn server:app --reload --port 8000
+# Start the FastAPI server
+python3 chess_trainer_system_server.py
 
-# Entre no diretório do front-end
+```
+> **The API will be available at:** `http://localhost:8000`
+> Interactive API documentation (Swagger UI) is available at `http://localhost:8000/docs`.
+
+### 2. Start the Frontend (React / Vite)
+Open a second terminal window for the web interface:
+
+```bash
+# Navigate to the frontend directory
 cd frontend
 
-# Instale as dependências via Yarn
-yarn install #npm install
+# Install dependencies via Yarn
+yarn install
 
-# Inicie o servidor de desenvolvimento
-yarn dev #npm run dev
+# Start the development server
+yarn dev
 ```
+> **The web application will be accessible at:** `http://localhost:5173`
 
-## 🎮 Como Usar a Aplicação
+---
 
-Selecione a opção desejada na barra superior: White, Black ou Random.
+## 🎮 How to Use the Application
 
-A cada movimento seu, o backend calculará a resposta da máquina e devolverá o lance no tabuleiro.
-
-Clique em "Request Analysis" para enviar o FEN da posição atual ao Stockfish (profundidade 20) e exibir o prompt formatado com as variantes e o score da posição.
+1. Open the application in your browser (`http://localhost:5173`).
+2. Click the **Novo jogo** button to start a new game.  
+3. Drag and drop pieces on the central board. 
+4. Each move you make is immediately validated and recorded in the left-hand navigation panel.
+5. The system automatically classifies your move in the background and applies a badge (e.g., `??` for Blunder).
+6. Click the **"Avaliar lance"** button in the right-hand panel. This gathers the calculated data from your last move and hits the `/semantic-evaluation` endpoint, displaying the detailed coach feedback explaining your position.

@@ -1,40 +1,49 @@
-# ♟️ Guia de Recursos e Referências: Sistema Treinador de Xadrez
+# ♟️ Resource and Reference Guide: Chess Trainer System
 
-## 📌 Notações e Padrões de Xadrez
+This document gathers the main links, libraries, datasets, and standards used in the development of the Chess Trainer System project.
+
+---
+
+## 📌 Chess Notations and Standards
 
 * **[FEN (Forsyth-Edwards Notation)](https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation)**
-  * *Descrição:* Padrão textual conciso de uma única linha para registrar o estado exato de qualquer posição no tabuleiro (disposição das peças, vez de jogar, direitos de roque, casa de captura *en passant* e contadores de lances).
+  * *Description:* A concise, single-line text standard used to record the exact state of any board position (piece placement, active color, castling rights, *en passant* target square, and move counters)
   
 * **[PGN (Portable Game Notation)](https://en.wikipedia.org/wiki/Portable_Game_Notation)**
-  * *Descrição:* Formato legível por humanos e computadores para registrar sequências completas de lances, variantes, comentários e metadados de partidas (evento, data, jogadores, resultado).
+  * *Description:* A human- and computer-readable format for recording complete move sequences, variations, comments, and game metadata (event, date, players, result)
 
 * **[UCI Protocol (Universal Chess Interface)](https://www.chessprogramming.org/UCI)**
-  * *Descrição:* Protocolo de comunicação aberto e textual que padroniza o envio de comandos e o recebimento de análises entre interfaces gráficas/back-ends e engines de xadrez (como Stockfish).
+  * *Description:* An open, text-based communication protocol that standardizes the transmission of commands and the reception of analyses between graphical interfaces/backends and chess engines (like Stockfish)
 
 ---
 
-## 🛠️ Bibliotecas e Ferramentas
+## 🛠️ Libraries and Tools
 
 * **[python-chess](https://python-chess.readthedocs.io/)**
-  * *Descrição:* Biblioteca essencial em Python para manipulação do estado do jogo, validação de regras, geração de lances legais, leitura/escrita de arquivos FEN e PGN, e integração via subprocessos com engines UCI.
+  * *Description:* An essential Python library for backend game state manipulation, rule validation, legal move generation, FEN/PGN parsing, and subprocess integration with UCI engines
 
-* **[Chessboard.js](https://chessboardjs.com/)**
-  * *Descrição:* Biblioteca JavaScript leve e responsiva para renderização e controle interativo do tabuleiro de xadrez no front-end.
+* **[FastAPI](https://fastapi.tiangolo.com/)**
+  * *Description:* A modern, fast web framework used to build the Python backend REST API, managing endpoints for engine moves and move analysis[cite: 3].
+
+* **[React](https://react.dev/) & [react-chessboard](https://www.npmjs.com/package/react-chessboard)**
+  * *Description:* The core UI framework and a lightweight, responsive library used for rendering and interactively controlling the chessboard on the frontend[cite: 1, 3].
+
+* **[chess.js](https://github.com/jhlywa/chess.js)**
+  * *Description:* A JavaScript chess library used on the frontend for move generation, validation, piece placement, and check/mate detection before sending data to the backend[cite: 3].
 
 * **[Stockfish Engine](https://stockfishchess.org/)**
-  * *Descrição:* Engine de xadrez *open-source* de alto desempenho utilizada para avaliar quantitativamente posições (pontuação em centipawns/mate) e calcular as melhores linhas táticas (PV - *Principal Variation*).
-  * *instalar:* sudo apt install stockfish
-  * [Using Stockfish in your own project ](https://official-stockfish.github.io/docs/stockfish-wiki/Developers.html#using-stockfish-in-your-own-project)
+  * *Description:* A high-performance, open-source chess engine used to quantitatively evaluate positions (centipawns/mate scores) and calculate the best tactical lines (PV - *Principal Variation*)
+  * *Install (Ubuntu):* `sudo apt install stockfish`
 
 ---
 
-## 📊 Datasets e Bases Teóricas
+## 📊 Datasets and Theoretical Bases
 
 * **[Lichess Open Database](https://database.lichess.org/)**
-  * *Descrição:* Repositório público com bilhões de partidas avaliadas, bases de dados de puzzles classificados por temas táticos e dados estatísticos abertos.
+  * *Description:* A public repository with billions of evaluated games, puzzle databases classified by tactical themes, and open statistical data
 
 * **[ChessEval Dataset (Hugging Face)](https://huggingface.co/datasets)**
-  * *Descrição:* Coleções de posições avaliadas por engines e anotadas semanticamente, úteis para calibrar e fornecer contexto estruturado aos prompts do LLM.
+  * *Description:* Collections of engine-evaluated and semantically annotated positions, useful for calibrating and providing structured context to LLM prompts
 
 * **[Chess Openings & ECO Codes (365Chess)](https://www.365chess.com/eco.php)**
-  * *Descrição:* Catálogo estruturado da Enciclopédia de Aberturas de Xadrez (ECO), útil para mapear linhas teóricas e nomear aberturas jogadas nas partidas de treino.
+  * *Description:* A structured catalog of the Encyclopedia of Chess Openings (ECO), useful for mapping theoretical lines and naming openings played in training games

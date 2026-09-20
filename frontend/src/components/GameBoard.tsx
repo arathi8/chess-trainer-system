@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Chess } from 'chess.js'
 import type { Square } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
@@ -11,7 +11,9 @@ interface MoveDetail {
   san: string
   fen: string
   classification?: string
-  winPercentLoss?: number
+  delta?: number
+  beforeAnalysis?: PositionAnalysis
+  afterAnalysis?: PositionAnalysis
 }
 
 interface MoveRow {
@@ -21,8 +23,8 @@ interface MoveRow {
 }
 
 const BADGE_CONFIG: Record<string, { label: string; className: string }> = {
-  'Great Move (!)': { label: '!', className: 'great' },
-  'Best Move': { label: '★', className: 'best' },
+  'Best Move': { label: '!', className: 'great' },
+  'Good Move': { label: '★', className: 'best' },
   'Inaccuracy': { label: '?!', className: 'inaccuracy' },
   'Mistake': { label: '?', className: 'mistake' },
   'Blunder': { label: '??', className: 'blunder' }
@@ -42,23 +44,34 @@ interface GameBoardProps {
   onBackHome: () => void
 }
 
-export default function GameBoard({ 
-  initialGame, 
-  initialHistory = [], 
+interface PositionAnalysis {
+  fen: string;
+  best_move: string;
+  evaluation: string;
+  depth: number;
+  line: string;
+}
+
+export default function GameBoard({
+  initialGame,
+  initialHistory = [],
   userColor,
   onNewGame,
-  onBackHome 
+  onBackHome
 }: GameBoardProps) {
   const [game, setGame] = useState<Chess>(initialGame || new Chess())
   const [moveHistory, setMoveHistory] = useState<MoveRow[]>(initialHistory)
-  const [analysis, setAnalysis] = useState<string>('')
+  const [analysis, setEvaluation] = useState<string>('')
   const [loadingAnalysis, setLoadingAnalysis] = useState(false)
   const [isEngineThinking, setIsEngineThinking] = useState(false)
+  const [semanticAnalysisReady, setSemanticAnalysisReady] = useState(false)
   const [reviewMode, setReviewMode] = useState(false)
   const [reviewFen, setReviewFen] = useState<string | null>(null)
   const [assistEnabled, setAssistEnabled] = useState(true)
+
   const gameRef = useRef<Chess>(game)
   gameRef.current = game
+
   const lastMoveRef = useRef<{ fenBefore: string; moveUci: string } | null>(null)
 
   const recordMove = (san: string, fen: string): { turnNumber: number; isWhite: boolean } => {
@@ -76,52 +89,72 @@ export default function GameBoard({
       } else {
         nextHistory[nextHistory.length - 1] = { ...row, black: { san, fen } }
       }
+
       return nextHistory
     })
 
     return { turnNumber, isWhite }
   }
 
-  const attachClassification = (
+  const attachEngineAnalysis = (
     turnNumber: number,
     isWhite: boolean,
-    classification: string,
-    winPercentLoss: number
+    moveClassification: string,
+    moveDelta: number,
+    beforeMoveAnalysis: PositionAnalysis,
+    afterMoveAnlysis: PositionAnalysis,
   ) => {
     setMoveHistory(prev =>
       prev.map(row => {
         if (row.turnNumber !== turnNumber) return row
 
-        if (isWhite) {
-          return { ...row, white: { ...row.white, classification, winPercentLoss } }
-        } else if (row.black) {
-          return { ...row, black: { ...row.black, classification, winPercentLoss } }
+        const engineData = {
+          classification: moveClassification,
+          delta: moveDelta,
+          beforeAnalysis: beforeMoveAnalysis,
+          afterAnalysis: afterMoveAnlysis
         }
+
+        if (isWhite) {
+          return { ...row, white: { ...row.white, ...engineData } }
+        } else if (row.black) {
+          return { ...row, black: { ...row.black, ...engineData } }
+        }
+
         return row
       })
     )
   }
 
-  const requestClassification = async (
-    fenBefore: string,
-    moveUci: string,
+  const requestEngineAnalysis = async (
+    fen: string,
+    move: string,
     turnNumber: number,
     isWhite: boolean
   ) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/evaluate-move`, {
+
+      const response = await fetch(`${API_BASE_URL}/engine-analysis`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fen: fenBefore, move_uci: moveUci })
+        body: JSON.stringify({ fen: fen, move: move })
       })
 
       if (!response.ok) throw new Error(`HTTP error: ${response.status}`)
 
       const data = await response.json()
 
-      if (data.classification) {
-        attachClassification(turnNumber, isWhite, data.classification, data.win_percent_loss)
-      }
+      attachEngineAnalysis(
+        turnNumber,
+        isWhite,
+        data.move_classification,
+        data.move_delta,
+        data.before_move_analysis,
+        data.after_move_analysis
+      )
+
+      setSemanticAnalysisReady(true)
+
     } catch (err) {
       console.error('Classification error:', err)
     }
@@ -129,6 +162,7 @@ export default function GameBoard({
 
   const requestEngineMove = async (currentFen: string) => {
     setIsEngineThinking(true)
+
     try {
       const response = await fetch(`${API_BASE_URL}/engine-move`, {
         method: 'POST',
@@ -140,12 +174,13 @@ export default function GameBoard({
 
       const data = await response.json()
 
-      if (data.engine_move_uci) {
+      if (data.engine_move) {
+        const engineMove = data.engine_move
         const gameCopy = new Chess(gameRef.current.fen())
         const move = gameCopy.move({
-          from: data.engine_move_uci.slice(0, 2) as Square,
-          to: data.engine_move_uci.slice(2, 4) as Square,
-          promotion: (data.engine_move_uci[4] || 'q') as 'n' | 'b' | 'r' | 'q'
+          from: engineMove.slice(0, 2) as Square,
+          to: engineMove.slice(2, 4) as Square,
+          promotion: (engineMove[4] || 'q') as 'n' | 'b' | 'r' | 'q'
         })
 
         if (move) {
@@ -153,6 +188,7 @@ export default function GameBoard({
           recordMove(move.san, gameCopy.fen())
         }
       }
+
     } catch (err) {
       console.error('Engine move error:', err)
     } finally {
@@ -160,10 +196,29 @@ export default function GameBoard({
     }
   }
 
+  const startGame = async () => {
+    const currentGame = gameRef.current
+
+    if (currentGame.isGameOver()) return
+
+    const currentTurn: PlayerColor =
+      currentGame.turn() === 'w' ? 'white' : 'black'
+
+    // If it is not the player's turn, the engine must make the first move.
+    if (currentTurn !== userColor) {
+      await requestEngineMove(currentGame.fen())
+    }
+  }
+
+  useEffect(() => {
+    startGame()
+  }, [])
+
   const onDrop = (sourceSquare: Square, targetSquare: Square): boolean => {
     if (reviewMode) return false
-    
+
     const currentTurn: PlayerColor = game.turn() === 'w' ? 'white' : 'black'
+
     if (currentTurn !== userColor || isEngineThinking || game.isGameOver()) {
       return false
     }
@@ -173,21 +228,38 @@ export default function GameBoard({
 
     try {
       const gameCopy = new Chess(game.fen())
-      const move = gameCopy.move({ from: sourceSquare, to: targetSquare, promotion: 'q' })
+
+      const move = gameCopy.move({
+        from: sourceSquare,
+        to: targetSquare,
+        promotion: 'q'
+      })
 
       if (!move) return false
 
       setGame(gameCopy)
-      const { turnNumber } = recordMove(move.san, gameCopy.fen())
+      setSemanticAnalysisReady(false)
+      setEvaluation(
+          'Aguarde a classificação técnica do lance antes de solicitar o feedback do treinador.'
+        )
+
+      const { turnNumber } = recordMove(
+        move.san,
+        gameCopy.fen()
+      )
 
       const moveUci = `${sourceSquare}${targetSquare}${move.promotion || ''}`
-      requestClassification(fenBefore, moveUci, turnNumber, isWhite)
-      lastMoveRef.current = { fenBefore, moveUci }
 
-      // Análise automática se assist estiver ligado
-      // Julgamos o lance que o usuário acabou de jogar (fen ANTES + lance)
-      if (assistEnabled && !gameCopy.isGameOver()) {
-        handleRequestAnalysis(fenBefore, moveUci)
+      requestEngineAnalysis(
+        fenBefore,
+        moveUci,
+        turnNumber,
+        isWhite
+      )
+
+      lastMoveRef.current = {
+        fenBefore,
+        moveUci
       }
 
       if (!gameCopy.isGameOver()) {
@@ -195,44 +267,66 @@ export default function GameBoard({
       }
 
       return true
+
     } catch (err) {
       console.error('Invalid move:', err)
       return false
     }
   }
 
-  const handleRequestAnalysis = async (fenBeforeMove?: string, moveUci?: string) => {
-    // Precisamos da posição ANTES do lance e do lance jogado para julgar a jogada
-    const targetFen = fenBeforeMove ?? lastMoveRef.current?.fenBefore
-    const targetMoveUci = moveUci ?? lastMoveRef.current?.moveUci
+  const requestSemanticEvaluation = async (
+    targetTurnNumber?: number,
+    targetIsWhite?: boolean,
+    directPayload?: any
+  ) => {
+    let payload = directPayload
 
-    if (!targetFen || !targetMoveUci) {
-      setAnalysis('Faça um movimento para receber a análise da sua jogada.')
-      return
+    if (!payload) {
+      const turnToEvaluate = targetTurnNumber ?? moveHistory.length
+      const row = moveHistory.find(r => r.turnNumber === turnToEvaluate)
+
+      if (!row) {
+        setEvaluation('Faça um lance para receber uma análise do seu movimento.')
+        return
+      }
+
+      const isWhiteMove = targetIsWhite ?? (userColor === 'white')
+      const moveData = isWhiteMove ? row.white : row.black
+
+      if (!moveData || !moveData.beforeAnalysis || !moveData.afterAnalysis) {
+        setEvaluation(
+          'Aguarde a classificação técnica do lance antes de solicitar o feedback do treinador.'
+        )
+        return
+      }
+
+      payload = {
+        before_move_analysis: moveData.beforeAnalysis,
+        after_move_analysis: moveData.afterAnalysis,
+        move_classification: moveData.classification,
+        move_delta: moveData.delta
+      }
     }
 
     setLoadingAnalysis(true)
+
     try {
-      const response = await fetch(`${API_BASE_URL}/analyze-move`, {
+      const response = await fetch(`${API_BASE_URL}/semantic-evaluation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fen: targetFen,
-          move_uci: targetMoveUci,
-          prompt: ''
-        })
+        body: JSON.stringify(payload)
       })
 
       if (!response.ok) throw new Error(`HTTP error: ${response.status}`)
 
       const data = await response.json()
       
-      const feedbackMessage = data.prompt || 'Análise não disponível.'
-      
-      setAnalysis(feedbackMessage)
+      setEvaluation(data.evaluation || 'Avaliação semântica indisponível.')
+
     } catch (err) {
-      console.error('Analysis error:', err)
-      setAnalysis('Não foi possível obter análise no momento.')
+      console.error('Semantic evaluation error:', err)
+      setEvaluation('Não foi possível obter a análise no momento.')
+
     } finally {
       setLoadingAnalysis(false)
     }
@@ -257,37 +351,45 @@ export default function GameBoard({
           <span className="brand-mark">♞</span>
           <span>chess<span className="gold">trainer</span></span>
         </button>
+
         <div className="top-actions">
           <button className="outline-btn" onClick={onNewGame}>
             Novo jogo
           </button>
         </div>
       </header>
+
       <div className="game-layout">
         <aside className="history-panel">
           <div className="panel-title">
             <div>
               <span className="eyebrow small">NAVEGAÇÃO</span>
-              <h2>Histórico da partida</h2>
+              <h2>Histórico do jogo</h2>
             </div>
           </div>
+
           <div className="moves">
-            <button 
+            <button
               className="start-move"
               onClick={() => {
                 setReviewMode(true)
                 setReviewFen(new Chess().fen())
               }}
             >
-              PARTIDA INICIADA
+              JOGO INICIADO
             </button>
+
             {moveHistory.map(item => (
               <div className="move-row" key={item.turnNumber}>
-                <span className="move-number">{String(item.turnNumber).padStart(2, '0')}</span>
+                <span className="move-number">
+                  {String(item.turnNumber).padStart(2, '0')}
+                </span>
+
                 <button onClick={() => handleMoveClick(item.white.fen)}>
                   <b>{item.white.san}</b>
                   <MoveBadge classification={item.white.classification} />
                 </button>
+
                 <button onClick={() => item.black && handleMoveClick(item.black.fen)}>
                   {item.black && (
                     <>
@@ -300,26 +402,29 @@ export default function GameBoard({
             ))}
           </div>
         </aside>
+
         <section className="center-stage">
           <div className="stage-head">
             <div>
               <span className="eyebrow small">
-                {reviewMode ? 'MODO REVISÃO' : 'ANÁLISE EM TEMPO REAL'}
+                {reviewMode ? 'MODO DE REVISÃO' : 'ANÁLISE EM TEMPO REAL'}
               </span>
+
               <h1>
-                {reviewMode 
-                  ? 'Revisando posição' 
-                  : game.turn() === (userColor === 'white' ? 'w' : 'b') 
-                    ? 'Seu turno' 
+                {reviewMode
+                  ? 'Revendo posição'
+                  : game.turn() === (userColor === 'white' ? 'w' : 'b')
+                    ? 'Sua vez'
                     : 'Oponente'}
               </h1>
             </div>
           </div>
+
           {reviewMode && (
-            <div style={{ 
-              background: '#2d3327', 
-              padding: '12px', 
-              borderRadius: '6px', 
+            <div style={{
+              background: '#2d3327',
+              padding: '12px',
+              borderRadius: '6px',
               marginBottom: '16px',
               display: 'flex',
               justifyContent: 'space-between',
@@ -328,8 +433,9 @@ export default function GameBoard({
               <span style={{ color: '#d0af68', fontSize: '12px' }}>
                 📋 Você está revisando um lance anterior
               </span>
-              <button 
-                className="outline-btn" 
+
+              <button
+                className="outline-btn"
                 style={{ padding: '6px 12px', fontSize: '11px' }}
                 onClick={exitReviewMode}
               >
@@ -337,19 +443,30 @@ export default function GameBoard({
               </button>
             </div>
           )}
+
           <div className="players">
             <div>
-              <span className="player-piece">{userColor === 'white' ? '♟' : '♙'}</span>
+              <span className="player-piece">
+                {userColor === 'white' ? '♟' : '♙'}
+              </span>
+
               <div>
                 <b>Stockfish</b>
                 <small>Engine</small>
               </div>
             </div>
           </div>
+
           <div className="board-wrap">
             <div className="rank-labels">
-              {(userColor === 'white' ? [8,7,6,5,4,3,2,1] : [1,2,3,4,5,6,7,8]).map(r => <span key={r}>{r}</span>)}
+              {(userColor === 'white'
+                ? [8, 7, 6, 5, 4, 3, 2, 1]
+                : [1, 2, 3, 4, 5, 6, 7, 8]
+              ).map(r => (
+                <span key={r}>{r}</span>
+              ))}
             </div>
+
             <div className="chessboard-container">
               <Chessboard
                 options={{
@@ -357,41 +474,64 @@ export default function GameBoard({
                   boardOrientation: userColor,
                   onPieceDrop: ({ sourceSquare, targetSquare }) => {
                     if (!sourceSquare || !targetSquare) return false
-                    return onDrop(sourceSquare as Square, targetSquare as Square)
+
+                    return onDrop(
+                      sourceSquare as Square,
+                      targetSquare as Square
+                    )
                   }
                 }}
               />
             </div>
+
             <div className="file-labels">
-              {(userColor === 'white' ? ['a','b','c','d','e','f','g','h'] : ['h','g','f','e','d','c','b','a']).map(f => <span key={f}>{f}</span>)}
+              {(userColor === 'white'
+                ? ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+                : ['h', 'g', 'f', 'e', 'd', 'c', 'b', 'a']
+              ).map(f => (
+                <span key={f}>{f}</span>
+              ))}
             </div>
           </div>
+
           {isEngineThinking && !reviewMode && (
-            <p style={{ textAlign: 'center', color: '#8b9487', marginTop: 12 }}>
+            <p style={{
+              textAlign: 'center',
+              color: '#8b9487',
+              marginTop: 12
+            }}>
               Engine pensando...
             </p>
           )}
+
           <div className="players bottom">
             <div>
-              <span className="player-piece">{userColor === 'white' ? '♙' : '♟'}</span>
+              <span className="player-piece">
+                {userColor === 'white' ? '♙' : '♟'}
+              </span>
+
               <div>
-                <b>Você</b>
+                <b>You</b>
                 <small>Jogador</small>
               </div>
             </div>
           </div>
         </section>
+
         <aside className="chat-panel">
           <div className="chat-head">
             <div className="bot-avatar">A</div>
+
             <div>
-              <b>Análise Stockfish</b>
+              <b>Análise do Stockfish</b>
+
               <span>
-                <span className="live-dot" /> 
-                {assistEnabled ? 'Assist ligado' : 'Assist desligado'}
+                <span className="live-dot" />
+                {assistEnabled ? 'Assistência ativada' : 'Assistência desativada'}
               </span>
             </div>
-            <button 
+
+            <button
               onClick={() => setAssistEnabled(!assistEnabled)}
               style={{
                 background: assistEnabled ? 'var(--gold)' : '#3a4038',
@@ -403,7 +543,11 @@ export default function GameBoard({
                 cursor: 'pointer',
                 transition: 'background 0.3s'
               }}
-              aria-label={assistEnabled ? 'Desligar assist' : 'Ligar assist'}
+              aria-label={
+                assistEnabled
+                  ? 'Desativar assistência'
+                  : 'Ativar assistência'
+              }
             >
               <span style={{
                 position: 'absolute',
@@ -417,32 +561,53 @@ export default function GameBoard({
               }} />
             </button>
           </div>
+
           <div className="chat-content">
             {!assistEnabled && (
               <p className="message system">
-                O assist está desligado. Ative-o para receber feedback automático após cada jogada.
+                Assistência desativada. Ative-a para receber feedback sobre seus lances.
               </p>
             )}
+
             {assistEnabled && !analysis && !loadingAnalysis && (
               <p className="message system">
-                Faça um movimento para receber feedback automático sobre sua jogada.
+                Faça um lance e solicite o feedback do treinador quando estiver pronto.
               </p>
             )}
+
             {loadingAnalysis && (
-              <p className="message system" style={{ color: '#d0af68' }}>
-                🤔 Analisando sua jogada...
+              <p
+                className="message system"
+                style={{ color: '#d0af68' }}
+              >
+                🤔 Analisando seu lance...
               </p>
             )}
-            {analysis && assistEnabled && <p className="message">{analysis}</p>}
+
+            {analysis && assistEnabled && (
+              <p className="message">
+                {analysis}
+              </p>
+            )}
           </div>
+
           <div style={{ padding: '0 18px 18px' }}>
             <button
               className="outline-btn"
-              style={{ width: '100%', justifyContent: 'center' }}
-              onClick={() => handleRequestAnalysis()}
-              disabled={loadingAnalysis}
+              style={{
+                width: '100%',
+                justifyContent: 'center'
+              }}
+              onClick={() => {
+                requestSemanticEvaluation()
+              }}
+              disabled={loadingAnalysis || !semanticAnalysisReady}
             >
-              {loadingAnalysis ? 'Analisando...' : 'Analisar novamente'}
+              {loadingAnalysis
+                ? 'Analisando...'
+                : semanticAnalysisReady
+                  ? 'Avaliar lance'
+                  : 'Avaliação não disponível'}
             </button>
           </div>
         </aside>

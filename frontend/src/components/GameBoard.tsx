@@ -289,15 +289,17 @@ export default function GameBoard({
     let payload = directPayload
 
     if (!payload) {
-      const turnToEvaluate = targetTurnNumber ?? moveHistory.length
-      const row = moveHistory.find(r => r.turnNumber === turnToEvaluate)
+      const isWhiteMove = targetIsWhite ?? (userColor === 'white')
+
+      const row = targetTurnNumber !== undefined
+        ? moveHistory.find(r => r.turnNumber === targetTurnNumber)
+        : moveHistory.findLast(r => (isWhiteMove ? r.white : r.black))
 
       if (!row) {
         setEvaluation('Faça um lance para receber uma análise do seu movimento.')
         return
       }
 
-      const isWhiteMove = targetIsWhite ?? (userColor === 'white')
       const moveData = isWhiteMove ? row.white : row.black
 
       if (!moveData || !moveData.beforeAnalysis || !moveData.afterAnalysis) {

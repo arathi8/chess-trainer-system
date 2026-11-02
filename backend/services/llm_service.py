@@ -16,7 +16,7 @@ PROVIDER_DEFAULTS = {
     },
     "gemini": {
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-        "api_key":  lambda: os.environ["GEMINI_API_KEY"], 
+        "api_key": None,
         "model": "gemini-2.5-flash",
     }
 }
@@ -46,7 +46,9 @@ class LLMService:
         
         # BYOK Resolution order: Explicit arg > Env Var > PROVIDER_DEFAULTS hardcoded key
         env_key_var = f"{provider.upper()}_API_KEY"
-        resolved_api_key = api_key or defaults["api_key"]
+        # A server-side key must never be forwarded to a caller-supplied base URL.
+        server_api_key = None if base_url else os.getenv(env_key_var)
+        resolved_api_key = api_key or server_api_key or defaults["api_key"]
 
         if not resolved_api_key and provider != "ollama":
             raise LLMError(

@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from 'react'
 import { Chess } from 'chess.js'
 import type { Square } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
+import LLMSettings from './LLMSettings'
+import type { LLMConfig } from '../llmConfig'
 
 const API_BASE_URL = 'http://localhost:8000/api'
 
@@ -40,6 +42,8 @@ interface GameBoardProps {
   initialGame?: Chess
   initialHistory?: MoveRow[]
   userColor: PlayerColor
+  llmConfig: LLMConfig | null
+  onLLMConfigChange: (config: LLMConfig | null) => void
   onNewGame: () => void
   onBackHome: () => void
 }
@@ -56,6 +60,8 @@ export default function GameBoard({
   initialGame,
   initialHistory = [],
   userColor,
+  llmConfig,
+  onLLMConfigChange,
   onNewGame,
   onBackHome
 }: GameBoardProps) {
@@ -68,6 +74,7 @@ export default function GameBoard({
   const [reviewMode, setReviewMode] = useState(false)
   const [reviewFen, setReviewFen] = useState<string | null>(null)
   const [assistEnabled, setAssistEnabled] = useState(true)
+  const [llmSettingsOpen, setLlmSettingsOpen] = useState(false)
 
   const gameRef = useRef<Chess>(game)
   gameRef.current = game
@@ -314,14 +321,17 @@ export default function GameBoard({
       const response = await fetch(`${API_BASE_URL}/semantic-evaluation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ ...payload, ...llmConfig })
       })
 
-      if (!response.ok) throw new Error(`HTTP error: ${response.status}`)
+      const data = await response.json().catch(() => null)
 
-      const data = await response.json()
-      
-      setEvaluation(data.evaluation || 'Avaliação semântica indisponível.')
+      if (!response.ok) {
+        setEvaluation(`Não foi possível obter a análise: ${data?.detail ?? `erro HTTP ${response.status}`}`)
+        return
+      }
+
+      setEvaluation(data?.evaluation || 'Avaliação semântica indisponível.')
 
     } catch (err) {
       console.error('Semantic evaluation error:', err)
@@ -355,6 +365,9 @@ export default function GameBoard({
         <div className="top-actions">
           <button className="outline-btn" onClick={onNewGame}>
             Novo jogo
+          </button>
+          <button className="outline-btn" onClick={() => setLlmSettingsOpen(true)}>
+            Configurar LLM
           </button>
         </div>
       </header>
@@ -612,6 +625,17 @@ export default function GameBoard({
           </div>
         </aside>
       </div>
+
+      {llmSettingsOpen && (
+        <LLMSettings
+          config={llmConfig}
+          onSave={config => {
+            onLLMConfigChange(config)
+            setLlmSettingsOpen(false)
+          }}
+          onCancel={() => setLlmSettingsOpen(false)}
+        />
+      )}
     </main>
   )
 }

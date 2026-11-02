@@ -83,3 +83,4 @@ yarn dev
 4. Each move you make is immediately validated and recorded in the left-hand navigation panel.
 5. The system automatically classifies your move in the background and applies a badge (e.g., `??` for Blunder).
 6. Click the **"Avaliar lance"** button in the right-hand panel. This gathers the calculated data from your last move and hits the `/semantic-evaluation` endpoint, displaying the detailed coach feedback explaining your position.
+7. *(Optional)* Click **Configurar LLM** in the top bar to use your own provider, API key, model, or base URL for the coach feedback. Blank fields use the server configuration, and the settings last until the browser tab is closed.

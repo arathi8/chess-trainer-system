@@ -1,3 +1,5 @@
+from typing import Optional
+
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -40,6 +42,11 @@ class SemanticEvaluationRequest(BaseModel):
     after_move_analysis: dict
     move_classification: str
     move_delta: float
+    # Optional BYOK settings; omitted fields fall back to the server configuration
+    provider: str = "gemini"
+    api_key: Optional[str] = None
+    model: Optional[str] = None
+    base_url: Optional[str] = None
 
 class SemanticEvaluationResponse(BaseModel):
     evaluation: str
@@ -86,6 +93,10 @@ def evaluation_result(payload: SemanticEvaluationRequest):
             after_analysis=payload.after_move_analysis,
             classification=payload.move_classification,
             win_loss_delta=payload.move_delta,
+            provider=payload.provider,
+            api_key=payload.api_key,
+            model=payload.model,
+            base_url=payload.base_url,
         )
     except LLMError as e:
         raise HTTPException(status_code=502, detail=f"LLM provider error: {e}")

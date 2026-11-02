@@ -4,6 +4,8 @@ import LandingPage from './components/LandingPage'
 import LoadPGNPage from './components/LoadPGNPage'
 import ColorSelector from './components/ColorSelector'
 import GameBoard from './components/GameBoard'
+import { loadLLMConfig, saveLLMConfig } from './llmConfig'
+import type { LLMConfig } from './llmConfig'
 
 type Screen = 'home' | 'pgn-loader' | 'color-selection' | 'game'
 type PlayerColor = 'white' | 'black'
@@ -27,6 +29,12 @@ function App() {
   const [game, setGame] = useState<Chess>(new Chess())
   const [moveHistory, setMoveHistory] = useState<MoveRow[]>([])
   const [pendingPgn, setPendingPgn] = useState<string | null>(null)
+  const [llmConfig, setLlmConfig] = useState<LLMConfig | null>(loadLLMConfig)
+
+  const handleLLMConfigChange = (config: LLMConfig | null) => {
+    setLlmConfig(config)
+    saveLLMConfig(config)
+  }
 
   const handleNewGame = () => {
     setScreen('color-selection')
@@ -128,6 +136,8 @@ function App() {
           initialGame={game}
           initialHistory={moveHistory}
           userColor={userColor}
+          llmConfig={llmConfig}
+          onLLMConfigChange={handleLLMConfigChange}
           onNewGame={handleNewGame}
           onBackHome={handleBackHome}
         />

@@ -1,10 +1,12 @@
+import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 # Import services
 from services.engine_service import get_move_analysis, get_engine_move
-from services.llm_service import generate_prompt
+from services.llm_service import generate_evaluation, LLMError
+
 app = FastAPI(title="Chess Trainer System API")
 
 # Enable CORS for Vite / React development server
@@ -52,14 +54,12 @@ def engine_move(payload: EngineMoveRequest):
     try:
         engine_move = get_engine_move(fen)
         return {"engine_move": engine_move}
-        
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Stockfish engine error: {str(e)}")
 
 
 @app.post("/api/engine-analysis",response_model=EngineAnalysisResponse)
 def move_analysis(payload: EngineAnalysisRequest):
-
     fen = payload.fen
     move = payload.move
 
@@ -72,22 +72,27 @@ def move_analysis(payload: EngineAnalysisRequest):
             )
         return move_analysis
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Stockfish analysis failure: {str(e)}")
 
 
 @app.post("/api/semantic-evaluation", response_model=SemanticEvaluationResponse)
 def evaluation_result(payload: SemanticEvaluationRequest):
-    
-    evaluation = generate_prompt(
-        before_analysis=payload.before_move_analysis,
-        after_analysis=payload.after_move_analysis,
-        classification=payload.move_classification,
-        win_loss_delta=payload.move_delta
-    )
+    try:
+        evaluation = generate_evaluation(
+            before_analysis=payload.before_move_analysis,
+            after_analysis=payload.after_move_analysis,
+            classification=payload.move_classification,
+            win_loss_delta=payload.move_delta,
+        )
+    except LLMError as e:
+        raise HTTPException(status_code=502, detail=f"LLM provider error: {e}")
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=f"LLM configuration error: {e}")
 
     return SemanticEvaluationResponse(evaluation=evaluation)
 
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run("chess_trainer_system_server:app", host="0.0.0.0", port=8000, reload=True)

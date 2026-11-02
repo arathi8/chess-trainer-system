@@ -5,6 +5,7 @@ import { Chessboard } from 'react-chessboard'
 import LLMSettings from './LLMSettings'
 import { API_BASE_URL } from '../api'
 import type { LLMConfig } from '../llmConfig'
+import ReactMarkdown from 'react-markdown'
 
 type PlayerColor = 'white' | 'black'
 
@@ -597,9 +598,9 @@ export default function GameBoard({
             )}
 
             {analysis && assistEnabled && (
-              <p className="message">
-                {analysis}
-              </p>
+              <div className="message markdown-body">
+                <ReactMarkdown>{analysis}</ReactMarkdown>
+              </div>
             )}
           </div>
 

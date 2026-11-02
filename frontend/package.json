@@ -13,7 +13,8 @@
     "chess.js": "^1.4.0",
     "react": "^19.2.8",
     "react-chessboard": "^5.12.1",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "react-markdown": "^10.1.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

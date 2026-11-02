@@ -2,7 +2,7 @@ from typing import Dict, Any, Optional
 
 from openai import OpenAI, APIError as OpenAIAPIError
 
-SYSTEM_PROMPT = "You are a chess expert assistant."
+SYSTEM_PROMPT = "You are a chess expert assistant. Respond using Markdown formatting."
 TIMEOUT = 60.0
 
 MISSING_API_KEY_MESSAGE = "Você precisa configurar sua LLM para avaliar lances."
@@ -159,4 +159,4 @@ def generate_evaluation(
         win_loss_delta=win_loss_delta,
     )
     text = llm_service.request(prompt)
-    return f"{llm_service.model}: {text}"
+    return text

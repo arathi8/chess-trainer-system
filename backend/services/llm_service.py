@@ -1,20 +1,18 @@
-import os
 from typing import Dict, Any, Optional
 
 from openai import OpenAI, APIError as OpenAIAPIError
 
 SYSTEM_PROMPT = "You are a chess expert assistant."
 TIMEOUT = 60.0
-MAX_TOKENS = 1024
 
-# Default configurations per provider
+MISSING_API_KEY_MESSAGE = "Você precisa configurar sua LLM para avaliar lances."
+
+DEFAULT_PROVIDER = "gemini"
+
+# Default configurations per provider. "api_key" is None when the user must supply one.
 PROVIDER_DEFAULTS = {
-    "ollama": {
-        "base_url": "http://localhost:11434/v1",
-        "api_key": "ollama",
-        "model": "llama3.2:3b",
-    },
     "gemini": {
+        "label": "Gemini",
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
         "api_key": None,
         "model": "gemini-2.5-flash",
@@ -26,35 +24,50 @@ class LLMError(Exception):
     """Generic LLM Error."""
 
 
+class LLMNotConfiguredError(LLMError):
+    """The request has no usable provider, or lacks the API key its provider requires."""
+
+
+def get_provider_options() -> Dict[str, Any]:
+    """Describes the selectable providers and their defaults, without any credential."""
+    return {
+        "default_provider": DEFAULT_PROVIDER,
+        "providers": {
+            name: {
+                "label": config["label"],
+                "model": config["model"],
+                "base_url": config["base_url"],
+                "requires_api_key": config["api_key"] is None,
+            }
+            for name, config in PROVIDER_DEFAULTS.items()
+        },
+    }
+
+
 class LLMService:
     def __init__(
         self,
-        provider: str = "gemini",
+        provider: str = DEFAULT_PROVIDER,
         api_key: Optional[str] = None,
         model: Optional[str] = None,
         base_url: Optional[str] = None,
     ):
         provider = provider.lower()
+        # Saved browser settings can outlive a provider that is no longer offered.
         if provider not in PROVIDER_DEFAULTS:
-            raise ValueError(f"Unknown provider: {provider}. Use: {list(PROVIDER_DEFAULTS)}")
+            raise LLMNotConfiguredError(MISSING_API_KEY_MESSAGE)
 
         defaults = PROVIDER_DEFAULTS[provider]
         self.provider = provider
         
-        # Model resolution: Explicit arg > Env Var > PROVIDER_DEFAULTS
-        self.model = model or os.getenv("LLM_MODEL") or defaults["model"]
+        # Model resolution: Explicit arg > PROVIDER_DEFAULTS
+        self.model = model or defaults["model"]
         
-        # BYOK Resolution order: Explicit arg > Env Var > PROVIDER_DEFAULTS hardcoded key
-        env_key_var = f"{provider.upper()}_API_KEY"
-        # A server-side key must never be forwarded to a caller-supplied base URL.
-        server_api_key = None if base_url else os.getenv(env_key_var)
-        resolved_api_key = api_key or server_api_key or defaults["api_key"]
+        # BYOK: keys come only from the request, never from the server environment
+        resolved_api_key = api_key or defaults["api_key"]
 
-        if not resolved_api_key and provider != "ollama":
-            raise LLMError(
-                f"API Key not provided for provider '{provider}'. "
-                f"Pass it in the request, set {env_key_var}, or add it to PROVIDER_DEFAULTS."
-            )
+        if not resolved_api_key:
+            raise LLMNotConfiguredError(MISSING_API_KEY_MESSAGE)
 
         # Base URL resolution: Explicit arg > PROVIDER_DEFAULTS
         resolved_base_url = base_url or defaults["base_url"]
@@ -126,7 +139,7 @@ def generate_evaluation(
     classification: Optional[str] = None,
     win_loss_delta: float = 0.0,
     # BYOK parameters forwarded from API/Frontend request
-    provider: str = "gemini",
+    provider: str = DEFAULT_PROVIDER,
     api_key: Optional[str] = None,
     model: Optional[str] = None,
     base_url: Optional[str] = None,

@@ -78,9 +78,8 @@ yarn dev
 ## 🎮 How to Use the Application
 
 1. Open the application in your browser (`http://localhost:5173`).
-2. Click the **Novo jogo** button to start a new game.  
+2. Click the **Novo jogo** button to start a new game. Then click **Configurar LLM** in the top bar and enter your provider and API key, which the coach feedback requires. A blank model or base URL uses the provider's default, and the settings last until the browser tab is closed.
 3. Drag and drop pieces on the central board. 
 4. Each move you make is immediately validated and recorded in the left-hand navigation panel.
 5. The system automatically classifies your move in the background and applies a badge (e.g., `??` for Blunder).
 6. Click the **"Avaliar lance"** button in the right-hand panel. This gathers the calculated data from your last move and hits the `/semantic-evaluation` endpoint, displaying the detailed coach feedback explaining your position.
-7. *(Optional)* Click **Configurar LLM** in the top bar to use your own provider, API key, model, or base URL for the coach feedback. Blank fields use the server configuration, and the settings last until the browser tab is closed.

@@ -1,25 +1,30 @@
-// Mirrors PROVIDER_DEFAULTS in backend/services/llm_service.py
-export const LLM_PROVIDERS = {
-  gemini: {
-    label: 'Gemini',
-    model: 'gemini-2.5-flash',
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/'
-  },
-  ollama: {
-    label: 'Ollama',
-    model: 'llama3.2:3b',
-    baseUrl: 'http://localhost:11434/v1'
-  }
+import { API_BASE_URL } from './api'
+
+export interface LLMProviderOption {
+  label: string
+  model: string
+  base_url: string
+  requires_api_key: boolean
 }
 
-export type LLMProvider = keyof typeof LLM_PROVIDERS
+// Served by the backend, which owns the available providers and their defaults.
+export interface LLMProviderCatalog {
+  default_provider: string
+  providers: Record<string, LLMProviderOption>
+}
 
 // Field names match the BYOK fields of the /semantic-evaluation request.
 export interface LLMConfig {
-  provider: LLMProvider
+  provider: string
   api_key: string
   model: string
   base_url: string
+}
+
+export async function fetchLLMProviders(): Promise<LLMProviderCatalog> {
+  const response = await fetch(`${API_BASE_URL}/llm-providers`)
+  if (!response.ok) throw new Error(`HTTP error: ${response.status}`)
+  return response.json()
 }
 
 const STORAGE_KEY = 'chesstrainer.llm-config'

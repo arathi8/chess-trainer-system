@@ -3,9 +3,8 @@ import { Chess } from 'chess.js'
 import type { Square } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 import LLMSettings from './LLMSettings'
+import { API_BASE_URL } from '../api'
 import type { LLMConfig } from '../llmConfig'
-
-const API_BASE_URL = 'http://localhost:8000/api'
 
 type PlayerColor = 'white' | 'black'
 
@@ -327,7 +326,7 @@ export default function GameBoard({
       const data = await response.json().catch(() => null)
 
       if (!response.ok) {
-        setEvaluation(`Não foi possível obter a análise: ${data?.detail ?? `erro HTTP ${response.status}`}`)
+        setEvaluation(data?.detail ?? `Não foi possível obter a análise: erro HTTP ${response.status}`)
         return
       }
 

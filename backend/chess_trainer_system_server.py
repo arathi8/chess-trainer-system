@@ -7,7 +7,13 @@ from pydantic import BaseModel
 
 # Import services
 from services.engine_service import get_move_analysis, get_engine_move
-from services.llm_service import generate_evaluation, LLMError
+from services.llm_service import (
+    DEFAULT_PROVIDER,
+    LLMError,
+    LLMNotConfiguredError,
+    generate_evaluation,
+    get_provider_options,
+)
 
 app = FastAPI(title="Chess Trainer System API")
 
@@ -42,14 +48,24 @@ class SemanticEvaluationRequest(BaseModel):
     after_move_analysis: dict
     move_classification: str
     move_delta: float
-    # Optional BYOK settings; omitted fields fall back to the server configuration
-    provider: str = "gemini"
+    # BYOK settings; an omitted model or base_url falls back to the provider's default
+    provider: str = DEFAULT_PROVIDER
     api_key: Optional[str] = None
     model: Optional[str] = None
     base_url: Optional[str] = None
 
 class SemanticEvaluationResponse(BaseModel):
     evaluation: str
+
+class LLMProviderOption(BaseModel):
+    label: str
+    model: str
+    base_url: str
+    requires_api_key: bool
+
+class LLMProvidersResponse(BaseModel):
+    default_provider: str
+    providers: dict[str, LLMProviderOption]
 
 # --- API Endpoints ---
 
@@ -85,6 +101,12 @@ def move_analysis(payload: EngineAnalysisRequest):
         raise HTTPException(status_code=500, detail=f"Stockfish analysis failure: {str(e)}")
 
 
+@app.get("/api/llm-providers", response_model=LLMProvidersResponse)
+def llm_providers():
+    """Lists the LLM providers the user can configure and their default settings."""
+    return get_provider_options()
+
+
 @app.post("/api/semantic-evaluation", response_model=SemanticEvaluationResponse)
 def evaluation_result(payload: SemanticEvaluationRequest):
     try:
@@ -98,6 +120,8 @@ def evaluation_result(payload: SemanticEvaluationRequest):
             model=payload.model,
             base_url=payload.base_url,
         )
+    except LLMNotConfiguredError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except LLMError as e:
         raise HTTPException(status_code=502, detail=f"LLM provider error: {e}")
     except ValueError as e:

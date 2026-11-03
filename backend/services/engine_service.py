@@ -1,13 +1,12 @@
 import math
-import chess
-import chess.engine
-from typing import Optional, Tuple
-from pathlib import Path
 import os
 import shutil
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
+
+import chess
+import chess.engine
 
 def find_stockfish() -> str:
     """Find the Stockfish executable bundled with the project or on PATH."""
@@ -62,7 +61,7 @@ def parse_move(board: chess.Board, user_move_uci: str) -> Optional[chess.Move]:
     return user_move
 
 
-def format_engine_analysis(
+def stringfy_engine_analysis(
     board: chess.Board,
     engine_result: chess.engine.InfoDict,
     max_moves_to_display: int = 15,
@@ -76,7 +75,7 @@ def format_engine_analysis(
     if "score" in engine_result:
         score = engine_result["score"].white()
         if score.is_mate():
-            score_str = f"Mate in {score.mate()} plies"
+            score_str = f"Mate in {score.mate()} moves"
         else:
             cp = score.score()
             if cp is not None:
@@ -149,24 +148,25 @@ def get_move_classification(
 
 # --- orchestator calls ---
 
-def get_engine_move(fen: str, min_depth: int = 20) -> Optional[str]:
+def get_engine_move(fen: str, min_depth: int = 20) -> str:
     """
     Calculate the engine's move for the given position.
+    Raises ValueError on an invalid or finished position.
     """
-    stockfish_path = find_stockfish()
     board = parse_board(fen)
-    try:
-        with chess.engine.SimpleEngine.popen_uci(stockfish_path) as engine:
-            result = engine.play(board, chess.engine.Limit(depth=min_depth))
-            
-            if result.move:
-                return result.move.uci()
-                
-         
-        
-    except Exception as err:
-        print(f"Engine execution failure: {err}", file=sys.stderr)
-    
+    if board is None:
+        raise ValueError(f"Invalid FEN: {fen}")
+    if board.is_game_over():
+        raise ValueError("The game is already over in this position")
+
+    stockfish_path = find_stockfish()
+    with chess.engine.SimpleEngine.popen_uci(stockfish_path) as engine:
+        result = engine.play(board, chess.engine.Limit(depth=min_depth))
+        if result.move is None:
+            raise ValueError("Engine returned no move")
+        return result.move.uci()
+
+
 
 def get_move_analysis(
     fen: str,
@@ -195,13 +195,13 @@ def get_move_analysis(
                 limit_kwargs["time"] = time_limit
             search_limit = chess.engine.Limit(**limit_kwargs)
 
-            before_move_analysis = engine.analyse(board, search_limit)
-            formated_before_move_analysis = format_engine_analysis(board, before_move_analysis)
+            analysis_before_move = engine.analyse(board, search_limit)
+            formated_before_move_analysis = stringfy_engine_analysis(board, analysis_before_move)
             board.push(user_move)
-            after_move_analysis = engine.analyse(board, search_limit)
-            formated_after_move_analysis = format_engine_analysis(board, after_move_analysis)
+            analysis_after_move = engine.analyse(board, search_limit)
+            formated_after_move_analysis = stringfy_engine_analysis(board, analysis_after_move)
 
-            move_classification, move_delta = get_move_classification(user_move, user_color, before_move_analysis, after_move_analysis)
+            move_classification, move_delta = get_move_classification(user_move, user_color, analysis_before_move, analysis_after_move)
 
             return {
                 "before_move_analysis": formated_before_move_analysis,

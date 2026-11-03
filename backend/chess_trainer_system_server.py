@@ -11,7 +11,7 @@ from services.llm_service import (
     DEFAULT_PROVIDER,
     LLMError,
     LLMNotConfiguredError,
-    generate_evaluation,
+    generate_move_evaluation,
     get_provider_options,
 )
 
@@ -43,18 +43,15 @@ class EngineAnalysisResponse(BaseModel):
     move_classification: str
     move_delta: float
 
-class SemanticEvaluationRequest(BaseModel):
-    before_move_analysis: dict
-    after_move_analysis: dict
-    move_classification: str
-    move_delta: float
+class MoveEvaluationRequest(BaseModel):
+    move_analysis: EngineAnalysisResponse
     # BYOK settings; an omitted model or base_url falls back to the provider's default
     provider: str = DEFAULT_PROVIDER
     api_key: Optional[str] = None
     model: Optional[str] = None
     base_url: Optional[str] = None
 
-class SemanticEvaluationResponse(BaseModel):
+class MoveEvaluationResponse(BaseModel):
     evaluation: str
 
 class LLMProviderOption(BaseModel):
@@ -62,6 +59,7 @@ class LLMProviderOption(BaseModel):
     model: str
     base_url: str
     requires_api_key: bool
+    uses_llm: bool
 
 class LLMProvidersResponse(BaseModel):
     default_provider: str
@@ -72,11 +70,10 @@ class LLMProvidersResponse(BaseModel):
 @app.post("/api/engine-move", response_model=EngineMoveResponse)
 def engine_move(payload: EngineMoveRequest):
     """Calculates the best response move from Stockfish for the opponent."""
-    fen = payload.fen
-
     try:
-        engine_move = get_engine_move(fen)
-        return {"engine_move": engine_move}
+        return {"engine_move": get_engine_move(payload.fen)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Stockfish engine error: {str(e)}")
 
@@ -107,14 +104,11 @@ def llm_providers():
     return get_provider_options()
 
 
-@app.post("/api/semantic-evaluation", response_model=SemanticEvaluationResponse)
-def evaluation_result(payload: SemanticEvaluationRequest):
+@app.post("/api/move-evaluation", response_model=MoveEvaluationResponse)
+def move_evaluation(payload: MoveEvaluationRequest):
     try:
-        evaluation = generate_evaluation(
-            before_analysis=payload.before_move_analysis,
-            after_analysis=payload.after_move_analysis,
-            classification=payload.move_classification,
-            win_loss_delta=payload.move_delta,
+        evaluation = generate_move_evaluation(
+            payload.move_analysis.model_dump(),
             provider=payload.provider,
             api_key=payload.api_key,
             model=payload.model,
@@ -127,7 +121,7 @@ def evaluation_result(payload: SemanticEvaluationRequest):
     except ValueError as e:
         raise HTTPException(status_code=500, detail=f"LLM configuration error: {e}")
 
-    return SemanticEvaluationResponse(evaluation=evaluation)
+    return MoveEvaluationResponse(evaluation=evaluation)
 
 if __name__ == "__main__":
     uvicorn.run("chess_trainer_system_server:app", host="0.0.0.0", port=8000, reload=True)

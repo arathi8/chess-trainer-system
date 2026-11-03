@@ -5,6 +5,7 @@ export interface LLMProviderOption {
   model: string
   base_url: string
   requires_api_key: boolean
+  uses_llm: boolean
 }
 
 // Served by the backend, which owns the available providers and their defaults.
@@ -13,7 +14,7 @@ export interface LLMProviderCatalog {
   providers: Record<string, LLMProviderOption>
 }
 
-// Field names match the BYOK fields of the /semantic-evaluation request.
+// Field names match the BYOK fields of the /move-evaluation request.
 export interface LLMConfig {
   provider: string
   api_key: string

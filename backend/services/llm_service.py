@@ -19,6 +19,9 @@ PROVIDER_DEFAULTS = {
     }
 }
 
+PROMPT_ONLY_PROVIDER = "prompt"
+PROMPT_ONLY_LABEL = "Somente prompt (sem LLM)"
+
 
 class LLMError(Exception):
     """Generic LLM Error."""
@@ -30,18 +33,29 @@ class LLMNotConfiguredError(LLMError):
 
 def get_provider_options() -> Dict[str, Any]:
     """Describes the selectable providers and their defaults, without any credential."""
-    return {
-        "default_provider": DEFAULT_PROVIDER,
-        "providers": {
-            name: {
-                "label": config["label"],
-                "model": config["model"],
-                "base_url": config["base_url"],
-                "requires_api_key": config["api_key"] is None,
-            }
-            for name, config in PROVIDER_DEFAULTS.items()
-        },
+    providers = {
+        name: {
+            "label": config["label"],
+            "model": config["model"],
+            "base_url": config["base_url"],
+            "requires_api_key": config["api_key"] is None,
+            "uses_llm": True,
+        }
+        for name, config in PROVIDER_DEFAULTS.items()
     }
+    providers[PROMPT_ONLY_PROVIDER] = {
+        "label": PROMPT_ONLY_LABEL,
+        "model": "",
+        "base_url": "",
+        "requires_api_key": False,
+        "uses_llm": False,
+    }
+    return {"default_provider": DEFAULT_PROVIDER, "providers": providers}
+
+
+def format_prompt_only(prompt: str) -> str:
+    """Shows the full prompt (system + user) verbatim in a Markdown code block."""
+    return f"```text\n[SYSTEM]\n{SYSTEM_PROMPT}\n\n[USER]\n{prompt.strip()}\n```"
 
 
 class LLMService:
@@ -93,28 +107,25 @@ class LLMService:
             raise LLMError(f"[{self.provider}/{self.model}] {e}") from e
 
 
-def format_analysis_block(summary: Dict[str, Any]) -> str:
+def format_analysis_block(analysis: Dict[str, Any]) -> str:
     """Formats the analysis summary dictionary into a standardized text block for the LLM."""
-    label = summary.get("label", "POSITION EVALUATION")
+    label = analysis.get("label", "POSITION EVALUATION")
     return (
         f"\n📊 --- {label} ---\n"
-        f"[] FEN: {summary['fen']}\n"
-        f"👉 Suggested best move: {summary['best_move']}\n"
-        f"📈 Position evaluation for White: {summary['evaluation']}\n"
-        f"🔬 Depth reached: {summary['depth']} plies\n"
-        f"♟️ Line: {summary['line']}\n"
+        f"[] FEN: {analysis['fen']}\n"
+        f"👉 Suggested best move: {analysis['best_move']}\n"
+        f"📈 Position evaluation for White: {analysis['evaluation']}\n"
+        f"🔬 Depth reached: {analysis['depth']} plies\n"
+        f"♟️ Line: {analysis['line']}\n"
         f"---------------------------\n"
     )
 
-def generate_prompt(
-    before_analysis: Dict[str, Any],
-    after_analysis: Dict[str, Any],
-    classification: Optional[str] = None,
-    win_loss_delta: float = 0.0,
-) -> str:
+def generate_prompt(move_analysis: Dict[str, Any]) -> str:
     """Builds the complete semantic prompt anchoring the LLM to the engine's mathematical evaluation."""
-    before = {**before_analysis, "label": "BEFORE USER MOVE"}
-    after = {**after_analysis, "label": "AFTER USER MOVE"}
+    before = {**move_analysis["before_move_analysis"], "label": "BEFORE USER MOVE"}
+    after = {**move_analysis["after_move_analysis"], "label": "AFTER USER MOVE"}
+    classification = move_analysis.get("move_classification")
+    move_delta = move_analysis.get("move_delta", 0.0)
 
     prompt = (
         "The user wants to understand the engine evaluation of this position. "
@@ -128,35 +139,33 @@ def generate_prompt(
     if classification:
         prompt += (
             f"\n🎯 System Classification: {classification}\n"
-            f"📉 Delta move: {win_loss_delta}\n"
+            f"📉 Delta move: {move_delta}\n"
         )
 
     return prompt
 
-def generate_evaluation(
-    before_analysis: Dict[str, Any],
-    after_analysis: Dict[str, Any],
-    classification: Optional[str] = None,
-    win_loss_delta: float = 0.0,
+def generate_move_evaluation(
+    move_analysis: Dict[str, Any],
     # BYOK parameters forwarded from API/Frontend request
     provider: str = DEFAULT_PROVIDER,
     api_key: Optional[str] = None,
     model: Optional[str] = None,
     base_url: Optional[str] = None,
 ) -> str:
-    """Instantiates the service on demand using user-provided credentials or defaults."""
+    """Evaluates the user's move from its engine analysis, as returned by get_move_analysis.
+
+    Instantiates the LLM service on demand using user-provided credentials or defaults.
+    With the prompt-only provider, returns the generated prompt without calling any LLM.
+    """
+    prompt = generate_prompt(move_analysis)
+
+    if provider.lower() == PROMPT_ONLY_PROVIDER:
+        return format_prompt_only(prompt)
+
     llm_service = LLMService(
         provider=provider,
         api_key=api_key,
         model=model,
         base_url=base_url,
     )
-    
-    prompt = generate_prompt(
-        before_analysis=before_analysis,
-        after_analysis=after_analysis,
-        classification=classification,
-        win_loss_delta=win_loss_delta,
-    )
-    text = llm_service.request(prompt)
-    return text
+    return llm_service.request(prompt)

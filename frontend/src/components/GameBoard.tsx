@@ -281,7 +281,7 @@ export default function GameBoard({
     }
   }
 
-  const requestSemanticEvaluation = async (
+  const requestMoveEvaluation = async (
     targetTurnNumber?: number,
     targetIsWhite?: boolean,
     directPayload?: any
@@ -310,17 +310,19 @@ export default function GameBoard({
       }
 
       payload = {
-        before_move_analysis: moveData.beforeAnalysis,
-        after_move_analysis: moveData.afterAnalysis,
-        move_classification: moveData.classification,
-        move_delta: moveData.delta
+        move_analysis: {
+          before_move_analysis: moveData.beforeAnalysis,
+          after_move_analysis: moveData.afterAnalysis,
+          move_classification: moveData.classification,
+          move_delta: moveData.delta
+        }
       }
     }
 
     setLoadingAnalysis(true)
 
     try {
-      const response = await fetch(`${API_BASE_URL}/semantic-evaluation`, {
+      const response = await fetch(`${API_BASE_URL}/move-evaluation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...payload, ...llmConfig })
@@ -336,7 +338,7 @@ export default function GameBoard({
       setEvaluation(data?.evaluation || 'Avaliação semântica indisponível.')
 
     } catch (err) {
-      console.error('Semantic evaluation error:', err)
+      console.error('Move evaluation error:', err)
       setEvaluation('Não foi possível obter a análise no momento.')
 
     } finally {
@@ -614,7 +616,7 @@ export default function GameBoard({
                 justifyContent: 'center'
               }}
               onClick={() => {
-                requestSemanticEvaluation()
+                requestMoveEvaluation()
               }}
               disabled={loadingAnalysis || !semanticAnalysisReady}
             >

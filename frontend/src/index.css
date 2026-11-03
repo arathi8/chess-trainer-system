@@ -121,6 +121,7 @@ button {
 .move-row button{background:none;border:0;text-align:left;color:#aeb3a9;padding:8px 5px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .move-row b{font-size:12px;font-weight:500}
 .move-row .active-move{color:var(--gold-light)}
+.markdown-body pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;user-select:text}
 .tag{font-size:8px;padding:2px 4px;border-radius:3px;white-space:nowrap}
 .tag.best{background:#5c8bb0;color:#fff}
 .tag.great{background:#95bb4a;color:#fff}

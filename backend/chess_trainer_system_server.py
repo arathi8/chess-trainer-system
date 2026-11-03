@@ -62,6 +62,7 @@ class LLMProviderOption(BaseModel):
     model: str
     base_url: str
     requires_api_key: bool
+    uses_llm: bool
 
 class LLMProvidersResponse(BaseModel):
     default_provider: str

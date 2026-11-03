@@ -54,36 +54,44 @@ function LLMSettingsForm({ catalog, config, onSave }: LLMSettingsFormProps) {
         </select>
       </label>
 
-      <label>
-        Chave de API
-        <input
-          type="password"
-          autoComplete="off"
-          required={defaults.requires_api_key}
-          value={draft.api_key}
-          onChange={e => updateField('api_key', e.target.value)}
-          placeholder={defaults.requires_api_key ? 'Sua chave de API' : 'Não necessária'}
-        />
-      </label>
+      {defaults.uses_llm ? (
+        <>
+          <label>
+            Chave de API
+            <input
+              type="password"
+              autoComplete="off"
+              required={defaults.requires_api_key}
+              value={draft.api_key}
+              onChange={e => updateField('api_key', e.target.value)}
+              placeholder={defaults.requires_api_key ? 'Sua chave de API' : 'Não necessária'}
+            />
+          </label>
 
-      <label>
-        Modelo
-        <input
-          value={draft.model}
-          onChange={e => updateField('model', e.target.value)}
-          placeholder={defaults.model}
-        />
-      </label>
+          <label>
+            Modelo
+            <input
+              value={draft.model}
+              onChange={e => updateField('model', e.target.value)}
+              placeholder={defaults.model}
+            />
+          </label>
 
-      <label>
-        URL base
-        <input
-          type="url"
-          value={draft.base_url}
-          onChange={e => updateField('base_url', e.target.value)}
-          placeholder={defaults.base_url}
-        />
-      </label>
+          <label>
+            URL base
+            <input
+              type="url"
+              value={draft.base_url}
+              onChange={e => updateField('base_url', e.target.value)}
+              placeholder={defaults.base_url}
+            />
+          </label>
+        </>
+      ) : (
+        <p className="message system">
+          Nenhuma LLM será chamada: "Avaliar lance" exibirá o prompt gerado para você copiar.
+        </p>
+      )}
 
       <button type="submit" className="primary-action full">
         Salvar

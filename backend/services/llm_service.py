@@ -19,6 +19,9 @@ PROVIDER_DEFAULTS = {
     }
 }
 
+PROMPT_ONLY_PROVIDER = "prompt"
+PROMPT_ONLY_LABEL = "Somente prompt (sem LLM)"
+
 
 class LLMError(Exception):
     """Generic LLM Error."""
@@ -30,18 +33,29 @@ class LLMNotConfiguredError(LLMError):
 
 def get_provider_options() -> Dict[str, Any]:
     """Describes the selectable providers and their defaults, without any credential."""
-    return {
-        "default_provider": DEFAULT_PROVIDER,
-        "providers": {
-            name: {
-                "label": config["label"],
-                "model": config["model"],
-                "base_url": config["base_url"],
-                "requires_api_key": config["api_key"] is None,
-            }
-            for name, config in PROVIDER_DEFAULTS.items()
-        },
+    providers = {
+        name: {
+            "label": config["label"],
+            "model": config["model"],
+            "base_url": config["base_url"],
+            "requires_api_key": config["api_key"] is None,
+            "uses_llm": True,
+        }
+        for name, config in PROVIDER_DEFAULTS.items()
     }
+    providers[PROMPT_ONLY_PROVIDER] = {
+        "label": PROMPT_ONLY_LABEL,
+        "model": "",
+        "base_url": "",
+        "requires_api_key": False,
+        "uses_llm": False,
+    }
+    return {"default_provider": DEFAULT_PROVIDER, "providers": providers}
+
+
+def format_prompt_only(prompt: str) -> str:
+    """Shows the full prompt (system + user) verbatim in a Markdown code block."""
+    return f"```text\n[SYSTEM]\n{SYSTEM_PROMPT}\n\n[USER]\n{prompt.strip()}\n```"
 
 
 class LLMService:
@@ -144,19 +158,24 @@ def generate_evaluation(
     model: Optional[str] = None,
     base_url: Optional[str] = None,
 ) -> str:
-    """Instantiates the service on demand using user-provided credentials or defaults."""
-    llm_service = LLMService(
-        provider=provider,
-        api_key=api_key,
-        model=model,
-        base_url=base_url,
-    )
-    
+    """Instantiates the service on demand using user-provided credentials or defaults.
+
+    With the prompt-only provider, returns the generated prompt without calling any LLM.
+    """
     prompt = generate_prompt(
         before_analysis=before_analysis,
         after_analysis=after_analysis,
         classification=classification,
         win_loss_delta=win_loss_delta,
     )
-    text = llm_service.request(prompt)
-    return text
+
+    if provider.lower() == PROMPT_ONLY_PROVIDER:
+        return format_prompt_only(prompt)
+
+    llm_service = LLMService(
+        provider=provider,
+        api_key=api_key,
+        model=model,
+        base_url=base_url,
+    )
+    return llm_service.request(prompt)

@@ -5,6 +5,7 @@ export interface LLMProviderOption {
   model: string
   base_url: string
   requires_api_key: boolean
+  uses_llm: boolean
 }
 
 // Served by the backend, which owns the available providers and their defaults.

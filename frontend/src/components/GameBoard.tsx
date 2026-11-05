@@ -2,8 +2,10 @@ import { useState, useRef, useEffect } from 'react'
 import { Chess } from 'chess.js'
 import type { Square } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
-
-const API_BASE_URL = 'http://localhost:8000/api'
+import LLMSettings from './LLMSettings'
+import { API_BASE_URL } from '../api'
+import type { LLMConfig } from '../llmConfig'
+import ReactMarkdown from 'react-markdown'
 
 type PlayerColor = 'white' | 'black'
 
@@ -40,6 +42,8 @@ interface GameBoardProps {
   initialGame?: Chess
   initialHistory?: MoveRow[]
   userColor: PlayerColor
+  llmConfig: LLMConfig | null
+  onLLMConfigChange: (config: LLMConfig | null) => void
   onNewGame: () => void
   onBackHome: () => void
 }
@@ -56,6 +60,8 @@ export default function GameBoard({
   initialGame,
   initialHistory = [],
   userColor,
+  llmConfig,
+  onLLMConfigChange,
   onNewGame,
   onBackHome
 }: GameBoardProps) {
@@ -68,6 +74,7 @@ export default function GameBoard({
   const [reviewMode, setReviewMode] = useState(false)
   const [reviewFen, setReviewFen] = useState<string | null>(null)
   const [assistEnabled, setAssistEnabled] = useState(true)
+  const [llmSettingsOpen, setLlmSettingsOpen] = useState(false)
 
   const gameRef = useRef<Chess>(game)
   gameRef.current = game
@@ -282,15 +289,17 @@ export default function GameBoard({
     let payload = directPayload
 
     if (!payload) {
-      const turnToEvaluate = targetTurnNumber ?? moveHistory.length
-      const row = moveHistory.find(r => r.turnNumber === turnToEvaluate)
+      const isWhiteMove = targetIsWhite ?? (userColor === 'white')
+
+      const row = targetTurnNumber !== undefined
+        ? moveHistory.find(r => r.turnNumber === targetTurnNumber)
+        : moveHistory.findLast(r => (isWhiteMove ? r.white : r.black))
 
       if (!row) {
         setEvaluation('Faça um lance para receber uma análise do seu movimento.')
         return
       }
 
-      const isWhiteMove = targetIsWhite ?? (userColor === 'white')
       const moveData = isWhiteMove ? row.white : row.black
 
       if (!moveData || !moveData.beforeAnalysis || !moveData.afterAnalysis) {
@@ -314,14 +323,17 @@ export default function GameBoard({
       const response = await fetch(`${API_BASE_URL}/semantic-evaluation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ ...payload, ...llmConfig })
       })
 
-      if (!response.ok) throw new Error(`HTTP error: ${response.status}`)
+      const data = await response.json().catch(() => null)
 
-      const data = await response.json()
-      
-      setEvaluation(data.evaluation || 'Avaliação semântica indisponível.')
+      if (!response.ok) {
+        setEvaluation(data?.detail ?? `Não foi possível obter a análise: erro HTTP ${response.status}`)
+        return
+      }
+
+      setEvaluation(data?.evaluation || 'Avaliação semântica indisponível.')
 
     } catch (err) {
       console.error('Semantic evaluation error:', err)
@@ -355,6 +367,9 @@ export default function GameBoard({
         <div className="top-actions">
           <button className="outline-btn" onClick={onNewGame}>
             Novo jogo
+          </button>
+          <button className="outline-btn" onClick={() => setLlmSettingsOpen(true)}>
+            Configurar LLM
           </button>
         </div>
       </header>
@@ -585,9 +600,9 @@ export default function GameBoard({
             )}
 
             {analysis && assistEnabled && (
-              <p className="message">
-                {analysis}
-              </p>
+              <div className="message markdown-body">
+                <ReactMarkdown>{analysis}</ReactMarkdown>
+              </div>
             )}
           </div>
 
@@ -612,6 +627,17 @@ export default function GameBoard({
           </div>
         </aside>
       </div>
+
+      {llmSettingsOpen && (
+        <LLMSettings
+          config={llmConfig}
+          onSave={config => {
+            onLLMConfigChange(config)
+            setLlmSettingsOpen(false)
+          }}
+          onCancel={() => setLlmSettingsOpen(false)}
+        />
+      )}
     </main>
   )
 }

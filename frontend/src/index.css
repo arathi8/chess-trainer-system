@@ -25,8 +25,8 @@ body {
   font-family: Arial, Helvetica, sans-serif; 
 }
 
-button,input,textarea { 
-  font:inherit; 
+button,input,select,textarea {
+  font:inherit;
 }
 
 button { 
@@ -83,6 +83,7 @@ button {
 .gold { color:var(--gold-light); }
 .beta { border:1px solid #605135; color:var(--gold-light); font-size:10px; letter-spacing:1.5px; padding:5px 8px; }
 .header-links,.top-actions { display:flex; align-items:center; gap:30px; color:#a5a79e; font-size:13px; }
+.top-actions { gap:12px; }
 .avatar { width:33px;height:33px;border-radius:50%; display:grid;place-items:center;background:#c5a16b;color:#161813;font-size:10px;font-weight:800; }
 
 .hero { max-width:1260px; margin:0 auto; min-height:calc(100vh - 151px); display:flex; align-items:center; justify-content:space-between; gap:50px; padding:30px 4vw 80px; }
@@ -120,6 +121,7 @@ button {
 .move-row button{background:none;border:0;text-align:left;color:#aeb3a9;padding:8px 5px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .move-row b{font-size:12px;font-weight:500}
 .move-row .active-move{color:var(--gold-light)}
+.markdown-body pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;user-select:text}
 .tag{font-size:8px;padding:2px 4px;border-radius:3px;white-space:nowrap}
 .tag.best{background:#5c8bb0;color:#fff}
 .tag.great{background:#95bb4a;color:#fff}
@@ -171,6 +173,12 @@ button {
 .dropzone b{color:#bda56e}
 .full{width:100%;padding:15px}
 .back-link{margin-top:20px;background:none;border:0;color:#8b9487;font-size:11px;display:inline-flex;align-items:center;gap:6px}
+
+.settings-form{display:flex;flex-direction:column;gap:14px;text-align:left}
+.settings-form label{display:flex;flex-direction:column;gap:6px;color:#abb0a8;font-size:12px}
+.settings-form input,.settings-form select{width:100%;background:#1a1e1a;border:1px solid #394139;border-radius:7px;color:#d7d7cc;padding:12px;outline:0;font-size:12px}
+.settings-form input:focus,.settings-form select:focus{border-color:#ae8b4e}
+.settings-form input::placeholder{color:#697267}
 
 @media(max-width:1050px){
   .game-layout{grid-template-columns:220px minmax(440px,1fr) 285px}

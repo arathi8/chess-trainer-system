@@ -1,10 +1,20 @@
+from typing import Optional
+
+import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 # Import services
 from services.engine_service import get_move_analysis, get_engine_move
-from services.llm_service import generate_prompt
+from services.llm_service import (
+    DEFAULT_PROVIDER,
+    LLMError,
+    LLMNotConfiguredError,
+    generate_evaluation,
+    get_provider_options,
+)
+
 app = FastAPI(title="Chess Trainer System API")
 
 # Enable CORS for Vite / React development server
@@ -38,9 +48,25 @@ class SemanticEvaluationRequest(BaseModel):
     after_move_analysis: dict
     move_classification: str
     move_delta: float
+    # BYOK settings; an omitted model or base_url falls back to the provider's default
+    provider: str = DEFAULT_PROVIDER
+    api_key: Optional[str] = None
+    model: Optional[str] = None
+    base_url: Optional[str] = None
 
 class SemanticEvaluationResponse(BaseModel):
     evaluation: str
+
+class LLMProviderOption(BaseModel):
+    label: str
+    model: str
+    base_url: str
+    requires_api_key: bool
+    uses_llm: bool
+
+class LLMProvidersResponse(BaseModel):
+    default_provider: str
+    providers: dict[str, LLMProviderOption]
 
 # --- API Endpoints ---
 
@@ -52,14 +78,12 @@ def engine_move(payload: EngineMoveRequest):
     try:
         engine_move = get_engine_move(fen)
         return {"engine_move": engine_move}
-        
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Stockfish engine error: {str(e)}")
 
 
 @app.post("/api/engine-analysis",response_model=EngineAnalysisResponse)
 def move_analysis(payload: EngineAnalysisRequest):
-
     fen = payload.fen
     move = payload.move
 
@@ -72,22 +96,39 @@ def move_analysis(payload: EngineAnalysisRequest):
             )
         return move_analysis
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Stockfish analysis failure: {str(e)}")
 
 
+@app.get("/api/llm-providers", response_model=LLMProvidersResponse)
+def llm_providers():
+    """Lists the LLM providers the user can configure and their default settings."""
+    return get_provider_options()
+
+
 @app.post("/api/semantic-evaluation", response_model=SemanticEvaluationResponse)
 def evaluation_result(payload: SemanticEvaluationRequest):
-    
-    evaluation = generate_prompt(
-        before_analysis=payload.before_move_analysis,
-        after_analysis=payload.after_move_analysis,
-        classification=payload.move_classification,
-        win_loss_delta=payload.move_delta
-    )
+    try:
+        evaluation = generate_evaluation(
+            before_analysis=payload.before_move_analysis,
+            after_analysis=payload.after_move_analysis,
+            classification=payload.move_classification,
+            win_loss_delta=payload.move_delta,
+            provider=payload.provider,
+            api_key=payload.api_key,
+            model=payload.model,
+            base_url=payload.base_url,
+        )
+    except LLMNotConfiguredError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except LLMError as e:
+        raise HTTPException(status_code=502, detail=f"LLM provider error: {e}")
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=f"LLM configuration error: {e}")
 
     return SemanticEvaluationResponse(evaluation=evaluation)
 
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run("chess_trainer_system_server:app", host="0.0.0.0", port=8000, reload=True)

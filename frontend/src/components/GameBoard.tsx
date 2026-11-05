@@ -149,7 +149,6 @@ export default function GameBoard({
   const [semanticAnalysisReady, setSemanticAnalysisReady] = useState(false)
   const [reviewMode, setReviewMode] = useState(false)
   const [reviewFen, setReviewFen] = useState<string | null>(null)
-  const [assistEnabled, setAssistEnabled] = useState(true)
   const [llmSettingsOpen, setLlmSettingsOpen] = useState(false)
 
   const isReview = mode === 'review'
@@ -181,6 +180,7 @@ export default function GameBoard({
   const reportPayloadRef = useRef<Record<string, unknown> | null>(null)
   const autoAnalysisStartedRef = useRef(false)
   const gameStartedRef = useRef(false)
+  const moveCoachRef = useRef<HTMLDivElement>(null)
 
   // Plies are 0-based half-moves: even = White's moves.
   const isUserPly = (ply: number) => (ply % 2 === 0) === (userColor === 'white')
@@ -631,7 +631,11 @@ export default function GameBoard({
   const handleMoveClick = (fen: string, turnNumber?: number, isWhite?: boolean) => {
     setReviewMode(true)
     setReviewFen(fen)
-    setSelectedMove(turnNumber !== undefined && isWhite !== undefined ? { turnNumber, isWhite } : null)
+    const next = turnNumber !== undefined && isWhite !== undefined ? { turnNumber, isWhite } : null
+    if (next?.turnNumber !== selectedMove?.turnNumber || next?.isWhite !== selectedMove?.isWhite) {
+      setEvaluation('') // the previous explanation was about another move
+    }
+    setSelectedMove(next)
   }
 
   const exitReviewMode = () => {
@@ -640,11 +644,21 @@ export default function GameBoard({
     setSelectedMove(null)
   }
 
+  // After the game, selecting a move in the history brings the per-move coach into view.
+  useEffect(() => {
+    if (selectedMove && gameFinished) {
+      moveCoachRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [selectedMove, gameFinished])
+
   // After the game, the coach explains the selected move (either side's), or the user's last move by default.
   const selectedMoveData = selectedMove
     ? moveHistory.find(r => r.turnNumber === selectedMove.turnNumber)?.[selectedMove.isWhite ? 'white' : 'black']
     : undefined
+  const selectedMoveIsUsers = selectedMove ? selectedMove.isWhite === (userColor === 'white') : true
   const canEvaluateSelected = selectedMove ? Boolean(selectedMoveData?.beforeAnalysis) : semanticAnalysisReady
+  const isSelected = (turnNumber: number, isWhite: boolean) =>
+    selectedMove?.turnNumber === turnNumber && selectedMove.isWhite === isWhite
 
   const displayFen = reviewMode && reviewFen ? reviewFen : game.fen()
 
@@ -696,12 +710,18 @@ export default function GameBoard({
                   {String(item.turnNumber).padStart(2, '0')}
                 </span>
 
-                <button onClick={() => handleMoveClick(item.white.fen, item.turnNumber, true)}>
+                <button
+                  className={isSelected(item.turnNumber, true) ? 'selected-move' : undefined}
+                  onClick={() => handleMoveClick(item.white.fen, item.turnNumber, true)}
+                >
                   <b>{item.white.san}</b>
                   {gameFinished && <MoveBadge classification={item.white.classification} />}
                 </button>
 
-                <button onClick={() => item.black && handleMoveClick(item.black.fen, item.turnNumber, false)}>
+                <button
+                  className={isSelected(item.turnNumber, false) ? 'selected-move' : undefined}
+                  onClick={() => item.black && handleMoveClick(item.black.fen, item.turnNumber, false)}
+                >
                   {item.black && (
                     <>
                       <b>{item.black.san}</b>
@@ -840,43 +860,9 @@ export default function GameBoard({
 
               <span>
                 <span className="live-dot" />
-                {!gameFinished
-                  ? 'Feedback oculto até o fim da partida'
-                  : assistEnabled ? 'Assistência ativada' : 'Assistência desativada'}
+                {gameFinished ? 'Relatório e análise por lance' : 'Feedback oculto até o fim da partida'}
               </span>
             </div>
-
-            {gameFinished && (
-              <button
-                onClick={() => setAssistEnabled(!assistEnabled)}
-                style={{
-                  background: assistEnabled ? 'var(--gold)' : '#3a4038',
-                  border: 'none',
-                  borderRadius: '12px',
-                  width: '44px',
-                  height: '24px',
-                  position: 'relative',
-                  cursor: 'pointer',
-                  transition: 'background 0.3s'
-                }}
-                aria-label={
-                  assistEnabled
-                    ? 'Desativar assistência'
-                    : 'Ativar assistência'
-                }
-              >
-                <span style={{
-                  position: 'absolute',
-                  top: '2px',
-                  left: assistEnabled ? '22px' : '2px',
-                  width: '20px',
-                  height: '20px',
-                  background: assistEnabled ? '#1d211a' : '#8d958b',
-                  borderRadius: '50%',
-                  transition: 'left 0.3s'
-                }} />
-              </button>
-            )}
           </div>
 
           <div className="chat-content">
@@ -900,35 +886,54 @@ export default function GameBoard({
                 data={report}
                 loading={reportLoading}
                 message={reportMessage}
-                onSelectMoment={fen => handleMoveClick(fen)}
+                onSelectMoment={(fen, ply) => handleMoveClick(fen, Math.floor(ply / 2) + 1, ply % 2 === 0)}
                 onRetry={generateReport}
                 onConfigureLLM={() => setLlmSettingsOpen(true)}
               />
             )}
 
-            {gameFinished && !assistEnabled && (
-              <p className="message system">
-                Assistência desativada. Ative-a para pedir explicações sobre lances específicos.
-              </p>
-            )}
-
-            {gameFinished && assistEnabled && (
-              <div className="move-coach">
+            {gameFinished && (
+              <div className="move-coach" ref={moveCoachRef}>
                 <span className="eyebrow small">ANÁLISE POR LANCE</span>
 
-                {!analysis && !loadingAnalysis && (
-                  <p className="message system">
-                    Selecione um lance no histórico (seu ou do oponente) e peça a explicação do treinador.
-                  </p>
+                <p className="move-coach-target">
+                  {selectedMove && selectedMoveData
+                    ? <>
+                        Lance selecionado: <b>{selectedMove.turnNumber}{selectedMove.isWhite ? '.' : '...'} {selectedMoveData.san}</b>
+                        {' '}({selectedMoveIsUsers ? 'seu' : 'do oponente'})
+                      </>
+                    : 'Selecione um lance no histórico (seu ou do oponente) para pedir a explicação do treinador.'}
+                </p>
+
+                <button
+                  className="outline-btn move-coach-btn"
+                  onClick={() => {
+                    requestMoveEvaluation(selectedMove?.turnNumber, selectedMove?.isWhite)
+                  }}
+                  disabled={loadingAnalysis || !canEvaluateSelected}
+                >
+                  {loadingAnalysis
+                    ? 'Analisando...'
+                    : !canEvaluateSelected
+                      ? selectedMove
+                        ? (opponentAnalysing ? 'Classificando lance...' : 'Lance sem classificação')
+                        : 'Selecione um lance'
+                      : selectedMove
+                        ? 'Avaliar lance selecionado'
+                        : 'Avaliar seu último lance'}
+                </button>
+
+                {opponentAnalysing && (
+                  <p className="message system">Classificando os lances do oponente...</p>
                 )}
 
                 {loadingAnalysis && (
                   <p className="message system" style={{ color: '#d0af68' }}>
-                    🤔 Analisando seu lance...
+                    🤔 Analisando o lance...
                   </p>
                 )}
 
-                {analysis && (
+                {analysis && !loadingAnalysis && (
                   <div className="message markdown-body">
                     <ReactMarkdown>{analysis}</ReactMarkdown>
                   </div>
@@ -936,32 +941,6 @@ export default function GameBoard({
               </div>
             )}
           </div>
-
-          {gameFinished && assistEnabled && (
-            <div style={{ padding: '0 18px 18px' }}>
-              <button
-                className="outline-btn"
-                style={{
-                  width: '100%',
-                  justifyContent: 'center'
-                }}
-                onClick={() => {
-                  requestMoveEvaluation(selectedMove?.turnNumber, selectedMove?.isWhite)
-                }}
-                disabled={loadingAnalysis || !canEvaluateSelected}
-              >
-                {loadingAnalysis
-                  ? 'Analisando...'
-                  : !canEvaluateSelected
-                    ? selectedMove
-                      ? (opponentAnalysing ? 'Classificando lance...' : 'Lance sem classificação')
-                      : 'Selecione um lance'
-                    : selectedMove
-                      ? 'Avaliar lance selecionado'
-                      : 'Avaliar seu último lance'}
-              </button>
-            </div>
-          )}
         </aside>
       </div>
 

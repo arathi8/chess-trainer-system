@@ -99,7 +99,7 @@ interface GameReportProps {
   data: GameReportData | null
   loading: boolean
   message: string | null
-  onSelectMoment: (fen: string) => void
+  onSelectMoment: (fen: string, ply: number) => void
   onRetry: () => void
   onConfigureLLM: () => void
 }
@@ -171,7 +171,7 @@ export default function GameReport({
             <div className="report-moments">
               <span className="eyebrow small">MOMENTOS-CHAVE</span>
               {data.stats.key_moments.map(km => (
-                <button key={km.ply} onClick={() => onSelectMoment(km.fen)} title="Ver a posição antes do lance">
+                <button key={km.ply} onClick={() => onSelectMoment(km.fen, km.ply)} title="Ver a posição antes do lance">
                   <b>{km.move_number} {km.san}</b>
                   <span>−{km.win_percent_loss}% · melhor: {km.best_move}</span>
                   {km.tags.length > 0 && (

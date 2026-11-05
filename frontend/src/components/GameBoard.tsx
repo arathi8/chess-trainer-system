@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import type { Move } from 'chess.js'
 import { Chess } from 'chess.js'
 import type { Square } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
@@ -10,6 +11,11 @@ import type { LLMConfig } from '../llmConfig'
 import ReactMarkdown from 'react-markdown'
 
 type PlayerColor = 'white' | 'black'
+// training: play Stockfish with feedback hidden until the end; review: analyse an imported PGN
+export type GameMode = 'training' | 'review'
+
+// Engine analyses running at once when analysing an imported game.
+const IMPORT_ANALYSIS_CONCURRENCY = 2
 
 interface MoveDetail {
   san: string
@@ -44,6 +50,7 @@ interface GameBoardProps {
   initialGame?: Chess
   initialHistory?: MoveRow[]
   userColor: PlayerColor
+  mode?: GameMode
   llmConfig: LLMConfig | null
   onLLMConfigChange: (config: LLMConfig | null) => void
   onNewGame: () => void
@@ -93,6 +100,21 @@ function describeResult(game: Chess, termination: string, userColor: PlayerColor
   return { result: '1/2-1/2', label: drawLabels[termination] ?? 'Empate' }
 }
 
+function describeImportedResult(result?: string): string {
+  const labels: Record<string, string> = {
+    '1-0': 'Partida importada: vitória das brancas',
+    '0-1': 'Partida importada: vitória das pretas',
+    '1/2-1/2': 'Partida importada: empate'
+  }
+  return (result && labels[result]) || 'Partida importada'
+}
+
+// Player name from the PGN headers, ignoring the "?" placeholder.
+function importedName(game: Chess, header: 'White' | 'Black', fallback: string): string {
+  const name = game.getHeaders()[header]
+  return name && name !== '?' ? name : fallback
+}
+
 // Copies a game with its move history (new Chess(fen) would keep only the position, so the
 // final PGN would lose the opening moves and start from a FEN).
 function cloneGame(game: Chess): Chess {
@@ -113,6 +135,7 @@ export default function GameBoard({
   initialGame,
   initialHistory = [],
   userColor,
+  mode = 'training',
   llmConfig,
   onLLMConfigChange,
   onNewGame,
@@ -129,9 +152,15 @@ export default function GameBoard({
   const [assistEnabled, setAssistEnabled] = useState(true)
   const [llmSettingsOpen, setLlmSettingsOpen] = useState(false)
 
+  const isReview = mode === 'review'
+
   // Training game: feedback stays hidden until the game ends, then the report is shown.
-  const [gameFinished, setGameFinished] = useState(false)
-  const [resultLabel, setResultLabel] = useState('')
+  // An imported game starts in that post-game state.
+  const [gameFinished, setGameFinished] = useState(isReview)
+  const [resultLabel, setResultLabel] = useState(() =>
+    isReview ? describeImportedResult(initialGame?.getHeaders().Result) : ''
+  )
+  const [importProgress, setImportProgress] = useState<{ done: number; total: number } | null>(null)
   const [report, setReport] = useState<GameReportData | null>(null)
   const [reportLoading, setReportLoading] = useState(false)
   const [reportMessage, setReportMessage] = useState<string | null>(null)
@@ -143,12 +172,16 @@ export default function GameBoard({
   const lastMoveRef = useRef<{ fenBefore: string; moveUci: string } | null>(null)
 
   // Refs, not state: the report is assembled after async work, where state would be stale.
-  const finishedRef = useRef(false)
+  const finishedRef = useRef(isReview)
   const analysisByPlyRef = useRef<Map<number, MoveAnalysis>>(new Map())
   const pendingAnalysesRef = useRef<Set<Promise<void>>>(new Set())
   const lenientPliesRef = useRef<number[]>([])
   const reportPayloadRef = useRef<Record<string, unknown> | null>(null)
+  const autoAnalysisStartedRef = useRef(false)
   const gameStartedRef = useRef(false)
+
+  // Plies are 0-based half-moves: even = White's moves.
+  const isUserPly = (ply: number) => (ply % 2 === 0) === (userColor === 'white')
 
   const recordMove = (san: string, fen: string): { turnNumber: number; isWhite: boolean } => {
     const lastRow = moveHistory[moveHistory.length - 1]
@@ -307,7 +340,7 @@ export default function GameBoard({
 
   useEffect(() => {
     // Guard: StrictMode runs effects twice in dev, which would request two opening engine moves.
-    if (gameStartedRef.current) return
+    if (isReview || gameStartedRef.current) return
     gameStartedRef.current = true
     startGame()
   }, [])
@@ -467,7 +500,7 @@ export default function GameBoard({
     }
   }
 
-  const submitReport = async (finalGame: Chess, result: string, termination: string) => {
+  const submitReport = async (finalGame: Chess, result: string, termination: string, imported: boolean) => {
     const moves = [...analysisByPlyRef.current.values()].sort((a, b) => a.ply - b.ply)
     const userColorCode = userColor === 'white' ? 'w' : 'b'
     const totalUserMoves = finalGame.history({ verbose: true }).filter(m => m.color === userColorCode).length
@@ -487,9 +520,45 @@ export default function GameBoard({
       pgn: finalGame.pgn(),
       moves,
       total_user_moves: totalUserMoves,
-      lenient_plies: lenientPliesRef.current
+      lenient_plies: lenientPliesRef.current,
+      imported
     }
     await generateReport()
+  }
+
+  // Classifies every move of one side that has no analysis yet, a few at a time.
+  const analyseMoves = async (
+    targetGame: Chess,
+    side: 'user' | 'opponent',
+    onProgress?: (done: number, total: number) => void
+  ) => {
+    const queue: { move: Move; turnNumber: number }[] = targetGame
+      .history({ verbose: true })
+      .map((m, i) => ({ move: m, turnNumber: Math.floor(i / 2) + 1 }))
+      .filter(({ move }) => {
+        const ply = plyFromFen(move.before)
+        return isUserPly(ply) === (side === 'user') && !analysisByPlyRef.current.has(ply)
+      })
+
+    const total = queue.length
+    let done = 0
+    onProgress?.(done, total)
+
+    const worker = async () => {
+      for (let item = queue.shift(); item; item = queue.shift()) {
+        const { move, turnNumber } = item
+        await requestEngineAnalysis(
+          move.before,
+          `${move.from}${move.to}${move.promotion ?? ''}`,
+          move.san,
+          turnNumber,
+          move.color === 'w'
+        )
+        done += 1
+        onProgress?.(done, total)
+      }
+    }
+    await Promise.all(Array.from({ length: IMPORT_ANALYSIS_CONCURRENCY }, worker))
   }
 
   const finishGame = async (termination: string) => {
@@ -506,8 +575,28 @@ export default function GameBoard({
     // The last moves' analyses may still be running.
     await Promise.allSettled([...pendingAnalysesRef.current])
 
-    await submitReport(finalGame, result, termination)
+    await submitReport(finalGame, result, termination, false)
   }
+
+  // Analyses every user move of an imported PGN, then builds the same report as a training game.
+  const analyseImportedGame = async () => {
+    const importedGame = gameRef.current
+    setReportMessage(null)
+
+    await analyseMoves(importedGame, 'user', (done, total) => setImportProgress({ done, total }))
+    setImportProgress(null)
+
+    setReportLoading(true)
+    const termination = importedGame.isGameOver() ? detectTermination(importedGame) : 'imported game'
+    await submitReport(importedGame, importedGame.getHeaders().Result ?? '*', termination, true)
+  }
+
+  // A loaded game goes straight to analysis and the report.
+  useEffect(() => {
+    if (!isReview || autoAnalysisStartedRef.current) return
+    autoAnalysisStartedRef.current = true
+    analyseImportedGame()
+  }, [])
 
   const handleResign = () => {
     if (gameFinished) return
@@ -661,8 +750,8 @@ export default function GameBoard({
               </span>
 
               <div>
-                <b>Stockfish</b>
-                <small>Engine</small>
+                <b>{isReview ? importedName(game, userColor === 'white' ? 'Black' : 'White', 'Oponente') : 'Stockfish'}</b>
+                <small>{isReview ? 'Oponente' : 'Engine'}</small>
               </div>
             </div>
           </div>
@@ -721,7 +810,7 @@ export default function GameBoard({
               </span>
 
               <div>
-                <b>You</b>
+                <b>{isReview ? importedName(game, userColor === 'white' ? 'White' : 'Black', 'Você') : 'You'}</b>
                 <small>Jogador</small>
               </div>
             </div>
@@ -785,7 +874,13 @@ export default function GameBoard({
               </p>
             )}
 
-            {gameFinished && (
+            {importProgress && (
+              <p className="message system" style={{ color: '#d0af68' }}>
+                🔍 Analisando seus lances: {importProgress.done} de {importProgress.total}...
+              </p>
+            )}
+
+            {gameFinished && !importProgress && (
               <GameReport
                 result={resultLabel}
                 data={report}

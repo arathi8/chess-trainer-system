@@ -253,11 +253,16 @@ def generate_report_prompt(
     termination: str,
     pgn: str = "",
     lenient_plies: Optional[List[int]] = None,
+    imported: bool = False,
 ) -> str:
+    intro = (
+        "You are reviewing a game the user played and imported from a PGN, to gauge the user's skill. "
+        if imported
+        else "You are reviewing a training game the user just played against Stockfish. "
+        "The game was a test to gauge the user's skill. "
+    )
     lines = [
-        "You are reviewing a training game the user just played against Stockfish. "
-        "The game was a test to gauge the user's skill. Write a post-game report in English, using Markdown, "
-        "with exactly these sections:",
+        intro + "Write a post-game report in English, using Markdown, with exactly these sections:",
         "1. **Overall assessment**: a rough skill band (beginner / intermediate / advanced) justified by the numbers below. Do not claim an Elo rating.",
         "2. **Opening & theory**: comment on the opening and the theoretical line played: whether the user followed theory, "
         "where the game left it, who left it and whether that was a good decision (use the opening-phase stats and key moments), "

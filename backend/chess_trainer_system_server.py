@@ -76,6 +76,8 @@ class GameReportRequest(BaseModel):
     moves: list[GameReportMove]
     total_user_moves: Optional[int] = None
     lenient_plies: list[int] = []
+    # True for games imported from a PGN rather than played against the engine
+    imported: bool = False
     # BYOK settings, as in MoveEvaluationRequest
     provider: str = DEFAULT_PROVIDER
     api_key: Optional[str] = None
@@ -181,6 +183,7 @@ def game_report(payload: GameReportRequest):
             termination=payload.termination,
             pgn=payload.pgn,
             lenient_plies=payload.lenient_plies,
+            imported=payload.imported,
             provider=payload.provider,
             api_key=payload.api_key,
             model=payload.model,

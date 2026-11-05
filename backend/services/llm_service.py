@@ -188,6 +188,7 @@ def generate_game_report(
     termination: str,
     pgn: str = "",
     lenient_plies: Optional[List[int]] = None,
+    imported: bool = False,
     # BYOK parameters forwarded from API/Frontend request
     provider: str = DEFAULT_PROVIDER,
     api_key: Optional[str] = None,
@@ -205,5 +206,6 @@ def generate_game_report(
         termination=termination,
         pgn=pgn,
         lenient_plies=lenient_plies,
+        imported=imported,
     )
     return complete_prompt(prompt, provider, api_key, model, base_url)

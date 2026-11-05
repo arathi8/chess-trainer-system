@@ -142,25 +142,42 @@ def format_analysis_block(analysis: Dict[str, Any]) -> str:
         f"---------------------------\n"
     )
 
-def generate_prompt(move_analysis: Dict[str, Any]) -> str:
-    """Builds the complete semantic prompt anchoring the LLM to the engine's mathematical evaluation."""
-    before = {**move_analysis["before_move_analysis"], "label": "BEFORE USER MOVE"}
-    after = {**move_analysis["after_move_analysis"], "label": "AFTER USER MOVE"}
+def generate_prompt(move_analysis: Dict[str, Any], mover: str = "user") -> str:
+    """Builds the complete semantic prompt anchoring the LLM to the engine's mathematical evaluation.
+
+    `mover` is "user" when the user played the move, "opponent" when their opponent did.
+    """
+    by_opponent = mover == "opponent"
+    who = "OPPONENT" if by_opponent else "USER"
+    before = {**move_analysis["before_move_analysis"], "label": f"BEFORE {who} MOVE"}
+    after = {**move_analysis["after_move_analysis"], "label": f"AFTER {who} MOVE"}
     classification = move_analysis.get("move_classification")
     move_delta = move_analysis.get("move_delta", 0.0)
 
-    prompt = (
-        "The user wants to understand the engine evaluation of this position. "
-        "Explain it like a chess coach, comparing the suggested best move with the played move. "
-        "Focus on a short answer."
-    )
+    if by_opponent:
+        prompt = (
+            "The user wants to understand a move played by their OPPONENT, not by the user. "
+            "Explain it like a chess coach talking to the user: what the opponent's idea was and how good the move was "
+            "compared with the engine's suggested best move. Then tell the user what it means for them: if it was a "
+            "mistake, how the user could exploit or punish it; if it was strong, which threat or plan it creates and "
+            "how the user should respond. Always refer to it as the opponent's move. Focus on a short answer."
+        )
+    else:
+        prompt = (
+            "The user wants to understand the engine evaluation of this position. "
+            "Explain it like a chess coach, comparing the suggested best move with the played move. "
+            "Focus on a short answer."
+        )
 
     prompt += "\n" + format_analysis_block(before)
     prompt += "\n" + format_analysis_block(after)
 
     if classification:
+        classification_label = (
+            "System Classification of the opponent's move" if by_opponent else "System Classification"
+        )
         prompt += (
-            f"\n🎯 System Classification: {classification}\n"
+            f"\n🎯 {classification_label}: {classification}\n"
             f"📉 Delta move: {move_delta}\n"
         )
 
@@ -168,6 +185,7 @@ def generate_prompt(move_analysis: Dict[str, Any]) -> str:
 
 def generate_move_evaluation(
     move_analysis: Dict[str, Any],
+    mover: str = "user",
     # BYOK parameters forwarded from API/Frontend request
     provider: str = DEFAULT_PROVIDER,
     api_key: Optional[str] = None,
@@ -179,7 +197,7 @@ def generate_move_evaluation(
     Instantiates the LLM service on demand using user-provided credentials or defaults.
     With the prompt-only provider, returns the generated prompt without calling any LLM.
     """
-    return complete_prompt(generate_prompt(move_analysis), provider, api_key, model, base_url)
+    return complete_prompt(generate_prompt(move_analysis, mover), provider, api_key, model, base_url)
 
 
 def generate_game_report(

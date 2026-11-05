@@ -161,6 +161,8 @@ export default function GameBoard({
     isReview ? describeImportedResult(initialGame?.getHeaders().Result) : ''
   )
   const [importProgress, setImportProgress] = useState<{ done: number; total: number } | null>(null)
+  // Opponent moves are classified after the game, for the history badges and the per-move coach.
+  const [opponentAnalysing, setOpponentAnalysing] = useState(false)
   const [report, setReport] = useState<GameReportData | null>(null)
   const [reportLoading, setReportLoading] = useState(false)
   const [reportMessage, setReportMessage] = useState<string | null>(null)
@@ -442,7 +444,8 @@ export default function GameBoard({
           after_move_analysis: moveData.afterAnalysis,
           move_classification: moveData.classification,
           move_delta: moveData.delta
-        }
+        },
+        mover: isWhiteMove === (userColor === 'white') ? 'user' : 'opponent'
       }
     }
 
@@ -501,7 +504,9 @@ export default function GameBoard({
   }
 
   const submitReport = async (finalGame: Chess, result: string, termination: string, imported: boolean) => {
-    const moves = [...analysisByPlyRef.current.values()].sort((a, b) => a.ply - b.ply)
+    const moves = [...analysisByPlyRef.current.values()]
+      .filter(m => isUserPly(m.ply))
+      .sort((a, b) => a.ply - b.ply)
     const userColorCode = userColor === 'white' ? 'w' : 'b'
     const totalUserMoves = finalGame.history({ verbose: true }).filter(m => m.color === userColorCode).length
 
@@ -561,6 +566,15 @@ export default function GameBoard({
     await Promise.all(Array.from({ length: IMPORT_ANALYSIS_CONCURRENCY }, worker))
   }
 
+  const analyseOpponentMoves = async (targetGame: Chess) => {
+    setOpponentAnalysing(true)
+    try {
+      await analyseMoves(targetGame, 'opponent')
+    } finally {
+      setOpponentAnalysing(false)
+    }
+  }
+
   const finishGame = async (termination: string) => {
     if (finishedRef.current) return
     finishedRef.current = true
@@ -575,6 +589,7 @@ export default function GameBoard({
     // The last moves' analyses may still be running.
     await Promise.allSettled([...pendingAnalysesRef.current])
 
+    analyseOpponentMoves(finalGame)
     await submitReport(finalGame, result, termination, false)
   }
 
@@ -583,9 +598,11 @@ export default function GameBoard({
     const importedGame = gameRef.current
     setReportMessage(null)
 
+    // The user's moves first: the report needs them. The opponent's follow, while the report is generated.
     await analyseMoves(importedGame, 'user', (done, total) => setImportProgress({ done, total }))
     setImportProgress(null)
 
+    analyseOpponentMoves(importedGame)
     setReportLoading(true)
     const termination = importedGame.isGameOver() ? detectTermination(importedGame) : 'imported game'
     await submitReport(importedGame, importedGame.getHeaders().Result ?? '*', termination, true)
@@ -623,14 +640,11 @@ export default function GameBoard({
     setSelectedMove(null)
   }
 
-  // After the game, the coach explains the selected move, or the user's last move by default.
+  // After the game, the coach explains the selected move (either side's), or the user's last move by default.
   const selectedMoveData = selectedMove
     ? moveHistory.find(r => r.turnNumber === selectedMove.turnNumber)?.[selectedMove.isWhite ? 'white' : 'black']
     : undefined
-  const selectedMoveIsUsers = selectedMove ? selectedMove.isWhite === (userColor === 'white') : true
-  const canEvaluateSelected = selectedMove
-    ? selectedMoveIsUsers && Boolean(selectedMoveData?.beforeAnalysis)
-    : semanticAnalysisReady
+  const canEvaluateSelected = selectedMove ? Boolean(selectedMoveData?.beforeAnalysis) : semanticAnalysisReady
 
   const displayFen = reviewMode && reviewFen ? reviewFen : game.fen()
 
@@ -904,7 +918,7 @@ export default function GameBoard({
 
                 {!analysis && !loadingAnalysis && (
                   <p className="message system">
-                    Selecione um dos seus lances no histórico e peça a explicação do treinador.
+                    Selecione um lance no histórico (seu ou do oponente) e peça a explicação do treinador.
                   </p>
                 )}
 
@@ -939,10 +953,12 @@ export default function GameBoard({
                 {loadingAnalysis
                   ? 'Analisando...'
                   : !canEvaluateSelected
-                    ? 'Selecione um lance seu'
+                    ? selectedMove
+                      ? (opponentAnalysing ? 'Classificando lance...' : 'Lance sem classificação')
+                      : 'Selecione um lance'
                     : selectedMove
                       ? 'Avaliar lance selecionado'
-                      : 'Avaliar último lance'}
+                      : 'Avaliar seu último lance'}
               </button>
             </div>
           )}

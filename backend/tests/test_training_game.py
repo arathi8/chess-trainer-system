@@ -250,3 +250,19 @@ def test_report_prompt_includes_opening_section():
     assert "C20 King's Pawn Game" in prompt
     assert "Left theory at move 2. Ba6, played by the user" in prompt
     assert "imported from a PGN" in prompt
+
+
+# --- per-move coach ---
+
+def test_semantic_prompt_for_opponent_move():
+    from services.llm_service import generate_prompt
+
+    move_analysis = HUNG_BISHOP  # a Blunder losing 30% win chance
+
+    user_prompt = generate_prompt(move_analysis)
+    assert "OPPONENT" not in user_prompt and "BEFORE USER MOVE" in user_prompt
+
+    opponent_prompt = generate_prompt(move_analysis, mover="opponent")
+    assert "played by their OPPONENT" in opponent_prompt
+    assert "BEFORE OPPONENT MOVE" in opponent_prompt
+    assert "System Classification of the opponent's move: Blunder" in opponent_prompt

@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -51,6 +51,8 @@ class EngineAnalysisResponse(BaseModel):
 
 class MoveEvaluationRequest(BaseModel):
     move_analysis: EngineAnalysisResponse
+    # Who played the evaluated move: the user or their opponent
+    mover: Literal["user", "opponent"] = "user"
     # BYOK settings; an omitted model or base_url falls back to the provider's default
     provider: str = DEFAULT_PROVIDER
     api_key: Optional[str] = None
@@ -145,6 +147,7 @@ def move_evaluation(payload: MoveEvaluationRequest):
     try:
         evaluation = generate_move_evaluation(
             payload.move_analysis.model_dump(),
+            mover=payload.mover,
             provider=payload.provider,
             api_key=payload.api_key,
             model=payload.model,

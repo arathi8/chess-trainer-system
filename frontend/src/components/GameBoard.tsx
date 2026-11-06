@@ -56,6 +56,14 @@ interface PositionAnalysis {
   line: string;
 }
 
+// Copies a game with its move history (new Chess(fen) would keep only the position, so the
+// final PGN would lose the opening moves and start from a FEN).
+function cloneGame(game: Chess): Chess {
+  const copy = new Chess()
+  copy.loadPgn(game.pgn())
+  return copy
+}
+
 export default function GameBoard({
   initialGame,
   initialHistory = [],
@@ -183,7 +191,7 @@ export default function GameBoard({
 
       if (data.engine_move) {
         const engineMove = data.engine_move
-        const gameCopy = new Chess(gameRef.current.fen())
+        const gameCopy = cloneGame(gameRef.current)
         const move = gameCopy.move({
           from: engineMove.slice(0, 2) as Square,
           to: engineMove.slice(2, 4) as Square,
@@ -234,7 +242,7 @@ export default function GameBoard({
     const isWhite = game.turn() === 'w'
 
     try {
-      const gameCopy = new Chess(game.fen())
+      const gameCopy = cloneGame(game)
 
       const move = gameCopy.move({
         from: sourceSquare,

@@ -1,3 +1,4 @@
+import random
 import sys
 from pathlib import Path
 
@@ -9,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from services.engine_service import (  # noqa: E402
     choose_lenient_move,
+    choose_varied_move,
     find_stockfish,
     get_engine_move,
 )
@@ -64,3 +66,27 @@ def test_engine_spares_early_queen_blunder():
 def test_engine_move_rejects_invalid_fen():
     with pytest.raises(ValueError):
         get_engine_move("not a fen")
+
+
+# --- engine variety ---
+
+def test_varied_move_picks_among_near_equal_moves():
+    board = chess.Board()
+    candidates = [candidate("e2e4", 30), candidate("d2d4", 25), candidate("c2c4", 20), candidate("a2a4", -60)]
+    picks = {choose_varied_move(board, candidates, random.Random(seed)).uci() for seed in range(50)}
+    assert picks == {"e2e4", "d2d4", "c2c4"}
+
+
+def test_varied_move_narrow_margin_after_opening():
+    board = chess.Board()
+    board.fullmove_number = 30
+    candidates = [candidate("e2e4", 30), candidate("d2d4", -10)]  # ~3.7% apart: beyond the late-game margin
+    picks = {choose_varied_move(board, candidates, random.Random(seed)).uci() for seed in range(20)}
+    assert picks == {"e2e4"}
+
+
+def test_varied_move_always_plays_forced_mate():
+    board = chess.Board()
+    mate = {"pv": [chess.Move.from_uci("e2e4")], "score": chess.engine.PovScore(chess.engine.Mate(2), chess.WHITE)}
+    picks = {choose_varied_move(board, [mate, candidate("d2d4", 2000)], random.Random(seed)).uci() for seed in range(20)}
+    assert picks == {"e2e4"}

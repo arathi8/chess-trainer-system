@@ -1,5 +1,6 @@
 import math
 import os
+import random
 import shutil
 import sys
 from pathlib import Path
@@ -14,6 +15,13 @@ GRACE_FULLMOVES = 12
 GRACE_WIN_CAP = 70.0
 # Lenient alternatives must still keep the engine at least this well off (it never gives the game away).
 GRACE_WIN_FLOOR = 50.0
+
+# Training games: to avoid repeating the same line every game, the engine picks at random among
+# candidates whose win% (its own POV) is within this margin of the best move. The margin is wider
+# in the opening, where several moves are about equally good, and narrow afterwards.
+VARIETY_OPENING_FULLMOVES = 10
+VARIETY_WIN_MARGIN_OPENING = 3.0
+VARIETY_WIN_MARGIN = 1.5
 
 # Candidate moves searched per training move. 3 at depth 20 costs about the same as a plain
 # engine.play at depth 20 (~2s); 5 candidates took 8-10s.
@@ -184,10 +192,38 @@ def choose_lenient_move(board: chess.Board, candidates: list[chess.engine.InfoDi
     return chosen, chosen != best_move
 
 
+def choose_varied_move(
+    board: chess.Board,
+    candidates: list[chess.engine.InfoDict],
+    rng: random.Random | None = None,
+) -> chess.Move:
+    """
+    Picks at random among the candidates that are nearly as good as the best one (see VARIETY_*).
+    A forced mate for the engine is always played.
+    """
+    rng = rng or random
+    scored = [
+        (info["pv"][0], info["score"].pov(board.turn), cp_to_win_percent(extract_cp(info["score"], board.turn)))
+        for info in candidates
+        if info.get("pv") and "score" in info
+    ]
+    if not scored:
+        raise ValueError("Engine returned no candidate moves")
+
+    best_move, best_score, best_win = scored[0]
+    if best_score.is_mate() and (best_score.mate() or 0) > 0:
+        return best_move
+
+    margin = VARIETY_WIN_MARGIN_OPENING if board.fullmove_number <= VARIETY_OPENING_FULLMOVES else VARIETY_WIN_MARGIN
+    near_best = [move for move, _, win in scored if win >= best_win - margin]
+    return rng.choice(near_best)
+
+
 def get_engine_move(fen: str, min_depth: int = 20, training: bool = False) -> Tuple[str, bool]:
     """
     Calculate the engine's move for the given position.
-    In training mode the engine is lenient during the opening (see GRACE_* constants).
+    In training mode the engine is lenient during the opening (see GRACE_* constants) and varies
+    its choice among near-equal moves (see VARIETY_* constants).
     Returns (move_uci, grace_applied). Raises ValueError on an invalid or finished position.
     """
     board = parse_board(fen)
@@ -199,10 +235,15 @@ def get_engine_move(fen: str, min_depth: int = 20, training: bool = False) -> Tu
     stockfish_path = find_stockfish()
     limit = chess.engine.Limit(depth=min_depth)
     with chess.engine.SimpleEngine.popen_uci(stockfish_path) as engine:
-        if training and board.fullmove_number <= GRACE_FULLMOVES:
+        if training:
             candidates = engine.analyse(board, limit, multipv=TRAINING_MULTIPV)
-            move, grace_applied = choose_lenient_move(board, candidates)
-            return move.uci(), grace_applied
+
+            if board.fullmove_number <= GRACE_FULLMOVES:
+                move, grace_applied = choose_lenient_move(board, candidates)
+                if grace_applied:
+                    return move.uci(), True
+
+            return choose_varied_move(board, candidates).uci(), False
 
         result = engine.play(board, limit)
         if result.move is None:

@@ -14,6 +14,7 @@ from services.engine_service import (  # noqa: E402
     find_stockfish,
     get_engine_move,
 )
+from services.openings_service import identify_opening  # noqa: E402
 from services.report_service import (  # noqa: E402
     compute_game_stats,
     error_tags,
@@ -218,3 +219,24 @@ def test_varied_move_always_plays_forced_mate():
     mate = {"pv": [chess.Move.from_uci("e2e4")], "score": chess.engine.PovScore(chess.engine.Mate(2), chess.WHITE)}
     picks = {choose_varied_move(board, [mate, candidate("d2d4", 2000)], random.Random(seed)).uci() for seed in range(20)}
     assert picks == {"e2e4"}
+
+
+# --- openings ---
+
+def test_identify_opening_user_left_theory():
+    opening = identify_opening("1. e4 e5 2. Ba6 bxa6", "white")
+    assert opening["eco"] == "C20"
+    assert opening["deviation"]["by"] == "user"
+    assert opening["deviation"]["kind"] == "left_theory"
+    assert opening["deviation"]["theory_moves"][0] == "Nf3"
+
+
+def test_identify_opening_follows_named_line():
+    opening = identify_opening("1. d4 Nf6 2. c4 e6 3. Nc3 Bb4", "black")
+    assert opening["name"] == "Nimzo-Indian Defense"
+    assert opening["deviation"] is None
+
+
+def test_identify_opening_non_standard_start():
+    pgn = '[SetUp "1"]\n[FEN "8/8/4k3/8/8/4K3/R7/r7 w - - 0 40"]\n\n40. Ra3'
+    assert identify_opening(pgn, "white") is None

@@ -88,6 +88,7 @@ export default function GameBoard({
   gameRef.current = game
 
   const lastMoveRef = useRef<{ fenBefore: string; moveUci: string } | null>(null)
+  const gameStartedRef = useRef(false)
 
   const recordMove = (san: string, fen: string): { turnNumber: number; isWhite: boolean } => {
     const lastRow = moveHistory[moveHistory.length - 1]
@@ -226,6 +227,9 @@ export default function GameBoard({
   }
 
   useEffect(() => {
+    // Guard: StrictMode runs effects twice in dev, which would request two opening engine moves.
+    if (gameStartedRef.current) return
+    gameStartedRef.current = true
     startGame()
   }, [])
 

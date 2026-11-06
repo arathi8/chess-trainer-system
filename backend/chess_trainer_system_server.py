@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -12,8 +12,12 @@ from services.llm_service import (
     LLMError,
     LLMNotConfiguredError,
     generate_move_evaluation,
+    LLMService,
+    PROMPT_ONLY_PROVIDER,
+    format_prompt_only,
     get_provider_options,
 )
+from services.report_service import compute_game_stats, generate_report_prompt
 
 app = FastAPI(title="Chess Trainer System API")
 
@@ -56,6 +60,33 @@ class MoveEvaluationRequest(BaseModel):
 
 class MoveEvaluationResponse(BaseModel):
     evaluation: str
+
+class GameReportMove(BaseModel):
+    ply: int
+    san: str
+    move_classification: str
+    move_delta: float
+    before_move_analysis: dict
+    after_move_analysis: dict
+
+class GameReportRequest(BaseModel):
+    user_color: str
+    result: str
+    termination: str
+    pgn: str = ""
+    moves: list[GameReportMove]
+    total_user_moves: Optional[int] = None
+    lenient_plies: list[int] = []
+    # BYOK settings, as in SemanticEvaluationRequest
+    provider: str = DEFAULT_PROVIDER
+    api_key: Optional[str] = None
+    model: Optional[str] = None
+    base_url: Optional[str] = None
+
+class GameReportResponse(BaseModel):
+    stats: dict[str, Any]
+    report: Optional[str] = None
+    report_error: Optional[str] = None
 
 class LLMProviderOption(BaseModel):
     label: str
@@ -126,6 +157,42 @@ def move_evaluation(payload: MoveEvaluationRequest):
         raise HTTPException(status_code=500, detail=f"LLM configuration error: {e}")
 
     return MoveEvaluationResponse(evaluation=evaluation)
+
+@app.post("/api/game-report", response_model=GameReportResponse)
+def game_report(payload: GameReportRequest):
+    """Builds the post-game report of a training game: stats always, LLM narrative when configured."""
+    moves = [move.model_dump() for move in payload.moves]
+    if not moves:
+        raise HTTPException(status_code=400, detail="No analysed moves to report on.")
+
+    try:
+        stats = compute_game_stats(moves, payload.user_color, payload.total_user_moves)
+    except (KeyError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"Invalid move data: {e}")
+
+    prompt = generate_report_prompt(
+        stats,
+        result=payload.result,
+        termination=payload.termination,
+        pgn=payload.pgn,
+        lenient_plies=payload.lenient_plies,
+    )
+
+    if payload.provider.lower() == PROMPT_ONLY_PROVIDER:
+        return GameReportResponse(stats=stats, report=format_prompt_only(prompt))
+
+    try:
+        llm = LLMService(
+            provider=payload.provider,
+            api_key=payload.api_key,
+            model=payload.model,
+            base_url=payload.base_url,
+        )
+        return GameReportResponse(stats=stats, report=llm.request(prompt))
+    except (LLMError, ValueError) as e:
+        # LLMNotConfiguredError is a subclass: the stats are still useful without the narrative.
+        return GameReportResponse(stats=stats, report_error=str(e))
+
 
 if __name__ == "__main__":
     uvicorn.run("chess_trainer_system_server:app", host="0.0.0.0", port=8000, reload=True)

@@ -3,6 +3,8 @@ import { Chess } from 'chess.js'
 import type { Square } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 import LLMSettings from './LLMSettings'
+import GameReport from './GameReport'
+import type { GameReportData } from './GameReport'
 import { API_BASE_URL } from '../api'
 import type { LLMConfig } from '../llmConfig'
 import ReactMarkdown from 'react-markdown'
@@ -56,12 +58,55 @@ interface PositionAnalysis {
   line: string;
 }
 
+// One analysed user move, in the shape /api/game-report expects.
+interface MoveAnalysis {
+  ply: number
+  san: string
+  move_classification: string
+  move_delta: number
+  before_move_analysis: PositionAnalysis
+  after_move_analysis: PositionAnalysis
+}
+
+// Half-move index of the side to move in a FEN: 0 = White's first move.
+const plyFromFen = (fen: string): number => {
+  const [, turn, , , , fullmove] = fen.split(' ')
+  return (Number(fullmove) - 1) * 2 + (turn === 'b' ? 1 : 0)
+}
+
+const MIN_MOVES_FOR_REPORT = 3
+
+function describeResult(game: Chess, termination: string, userColor: PlayerColor): { result: string; label: string } {
+  if (termination === 'resignation') {
+    return { result: userColor === 'white' ? '0-1' : '1-0', label: 'Você abandonou a partida' }
+  }
+  if (termination === 'checkmate') {
+    const userLost = (game.turn() === 'w') === (userColor === 'white')
+    return { result: game.turn() === 'w' ? '0-1' : '1-0', label: userLost ? 'Xeque-mate: você perdeu' : 'Xeque-mate: você venceu!' }
+  }
+  const drawLabels: Record<string, string> = {
+    stalemate: 'Empate por afogamento',
+    threefold_repetition: 'Empate por repetição',
+    insufficient_material: 'Empate por material insuficiente',
+    draw: 'Empate'
+  }
+  return { result: '1/2-1/2', label: drawLabels[termination] ?? 'Empate' }
+}
+
 // Copies a game with its move history (new Chess(fen) would keep only the position, so the
 // final PGN would lose the opening moves and start from a FEN).
 function cloneGame(game: Chess): Chess {
   const copy = new Chess()
   copy.loadPgn(game.pgn())
   return copy
+}
+
+function detectTermination(game: Chess): string {
+  if (game.isCheckmate()) return 'checkmate'
+  if (game.isStalemate()) return 'stalemate'
+  if (game.isThreefoldRepetition()) return 'threefold_repetition'
+  if (game.isInsufficientMaterial()) return 'insufficient_material'
+  return 'draw'
 }
 
 export default function GameBoard({
@@ -84,10 +129,25 @@ export default function GameBoard({
   const [assistEnabled, setAssistEnabled] = useState(true)
   const [llmSettingsOpen, setLlmSettingsOpen] = useState(false)
 
+  // Training game: feedback stays hidden until the game ends, then the report is shown.
+  const [gameFinished, setGameFinished] = useState(false)
+  const [resultLabel, setResultLabel] = useState('')
+  const [report, setReport] = useState<GameReportData | null>(null)
+  const [reportLoading, setReportLoading] = useState(false)
+  const [reportMessage, setReportMessage] = useState<string | null>(null)
+  const [selectedMove, setSelectedMove] = useState<{ turnNumber: number; isWhite: boolean } | null>(null)
+
   const gameRef = useRef<Chess>(game)
   gameRef.current = game
 
   const lastMoveRef = useRef<{ fenBefore: string; moveUci: string } | null>(null)
+
+  // Refs, not state: the report is assembled after async work, where state would be stale.
+  const finishedRef = useRef(false)
+  const analysisByPlyRef = useRef<Map<number, MoveAnalysis>>(new Map())
+  const pendingAnalysesRef = useRef<Set<Promise<void>>>(new Set())
+  const lenientPliesRef = useRef<number[]>([])
+  const reportPayloadRef = useRef<Record<string, unknown> | null>(null)
   const gameStartedRef = useRef(false)
 
   const recordMove = (san: string, fen: string): { turnNumber: number; isWhite: boolean } => {
@@ -145,6 +205,7 @@ export default function GameBoard({
   const requestEngineAnalysis = async (
     fen: string,
     move: string,
+    san: string,
     turnNumber: number,
     isWhite: boolean
   ) => {
@@ -159,6 +220,16 @@ export default function GameBoard({
       if (!response.ok) throw new Error(`HTTP error: ${response.status}`)
 
       const data = await response.json()
+
+      const ply = plyFromFen(fen)
+      analysisByPlyRef.current.set(ply, {
+        ply,
+        san,
+        move_classification: data.move_classification,
+        move_delta: data.move_delta,
+        before_move_analysis: data.before_move_analysis,
+        after_move_analysis: data.after_move_analysis
+      })
 
       attachEngineAnalysis(
         turnNumber,
@@ -189,6 +260,14 @@ export default function GameBoard({
       if (!response.ok) throw new Error(`HTTP error: ${response.status}`)
 
       const data = await response.json()
+
+      // The player resigned while the engine was thinking.
+      if (finishedRef.current) return
+
+      // The engine went easy on the user's previous move: the report still counts it as an error.
+      if (data.grace_applied) {
+        lenientPliesRef.current.push(plyFromFen(currentFen) - 1)
+      }
 
       if (data.engine_move) {
         const engineMove = data.engine_move
@@ -234,7 +313,7 @@ export default function GameBoard({
   }, [])
 
   const onDrop = (sourceSquare: Square, targetSquare: Square): boolean => {
-    if (reviewMode) return false
+    if (reviewMode || gameFinished) return false
 
     const currentTurn: PlayerColor = game.turn() === 'w' ? 'white' : 'black'
 
@@ -269,12 +348,15 @@ export default function GameBoard({
 
       const moveUci = `${sourceSquare}${targetSquare}${move.promotion || ''}`
 
-      requestEngineAnalysis(
+      const analysisPromise = requestEngineAnalysis(
         fenBefore,
         moveUci,
+        move.san,
         turnNumber,
         isWhite
       )
+      pendingAnalysesRef.current.add(analysisPromise)
+      analysisPromise.finally(() => pendingAnalysesRef.current.delete(analysisPromise))
 
       lastMoveRef.current = {
         fenBefore,
@@ -358,15 +440,108 @@ export default function GameBoard({
     }
   }
 
-  const handleMoveClick = (fen: string) => {
+  const generateReport = async () => {
+    const payload = reportPayloadRef.current
+    if (!payload) return
+
+    setReportLoading(true)
+    try {
+      const response = await fetch(`${API_BASE_URL}/game-report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, ...llmConfig })
+      })
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok) {
+        setReportMessage(data?.detail ?? `Não foi possível gerar o relatório: erro HTTP ${response.status}`)
+        return
+      }
+      setReportMessage(null)
+      setReport(data)
+    } catch (err) {
+      console.error('Game report error:', err)
+      setReportMessage('Não foi possível gerar o relatório no momento.')
+    } finally {
+      setReportLoading(false)
+    }
+  }
+
+  const submitReport = async (finalGame: Chess, result: string, termination: string) => {
+    const moves = [...analysisByPlyRef.current.values()].sort((a, b) => a.ply - b.ply)
+    const userColorCode = userColor === 'white' ? 'w' : 'b'
+    const totalUserMoves = finalGame.history({ verbose: true }).filter(m => m.color === userColorCode).length
+
+    if (moves.length < MIN_MOVES_FOR_REPORT) {
+      setReportLoading(false)
+      setReportMessage(
+        `Lances insuficientes para avaliar: são necessários pelo menos ${MIN_MOVES_FOR_REPORT} lances analisados.`
+      )
+      return
+    }
+
+    reportPayloadRef.current = {
+      user_color: userColor,
+      result,
+      termination,
+      pgn: finalGame.pgn(),
+      moves,
+      total_user_moves: totalUserMoves,
+      lenient_plies: lenientPliesRef.current
+    }
+    await generateReport()
+  }
+
+  const finishGame = async (termination: string) => {
+    if (finishedRef.current) return
+    finishedRef.current = true
+
+    const finalGame = gameRef.current
+    const { result, label } = describeResult(finalGame, termination, userColor)
+    setGameFinished(true)
+    setResultLabel(label)
+    setIsEngineThinking(false)
+    setReportLoading(true)
+
+    // The last moves' analyses may still be running.
+    await Promise.allSettled([...pendingAnalysesRef.current])
+
+    await submitReport(finalGame, result, termination)
+  }
+
+  const handleResign = () => {
+    if (gameFinished) return
+    if (window.confirm('Encerrar a partida e ver o relatório?')) {
+      finishGame('resignation')
+    }
+  }
+
+  useEffect(() => {
+    if (game.isGameOver()) {
+      finishGame(detectTermination(game))
+    }
+  }, [game])
+
+  const handleMoveClick = (fen: string, turnNumber?: number, isWhite?: boolean) => {
     setReviewMode(true)
     setReviewFen(fen)
+    setSelectedMove(turnNumber !== undefined && isWhite !== undefined ? { turnNumber, isWhite } : null)
   }
 
   const exitReviewMode = () => {
     setReviewMode(false)
     setReviewFen(null)
+    setSelectedMove(null)
   }
+
+  // After the game, the coach explains the selected move, or the user's last move by default.
+  const selectedMoveData = selectedMove
+    ? moveHistory.find(r => r.turnNumber === selectedMove.turnNumber)?.[selectedMove.isWhite ? 'white' : 'black']
+    : undefined
+  const selectedMoveIsUsers = selectedMove ? selectedMove.isWhite === (userColor === 'white') : true
+  const canEvaluateSelected = selectedMove
+    ? selectedMoveIsUsers && Boolean(selectedMoveData?.beforeAnalysis)
+    : semanticAnalysisReady
 
   const displayFen = reviewMode && reviewFen ? reviewFen : game.fen()
 
@@ -379,6 +554,11 @@ export default function GameBoard({
         </button>
 
         <div className="top-actions">
+          {!gameFinished && (
+            <button className="outline-btn" onClick={handleResign}>
+              Encerrar partida
+            </button>
+          )}
           <button className="outline-btn" onClick={onNewGame}>
             Novo jogo
           </button>
@@ -388,7 +568,7 @@ export default function GameBoard({
         </div>
       </header>
 
-      <div className="game-layout">
+      <div className={`game-layout${gameFinished ? ' finished' : ''}`}>
         <aside className="history-panel">
           <div className="panel-title">
             <div>
@@ -401,8 +581,7 @@ export default function GameBoard({
             <button
               className="start-move"
               onClick={() => {
-                setReviewMode(true)
-                setReviewFen(new Chess().fen())
+                handleMoveClick(new Chess().fen())
               }}
             >
               JOGO INICIADO
@@ -414,16 +593,16 @@ export default function GameBoard({
                   {String(item.turnNumber).padStart(2, '0')}
                 </span>
 
-                <button onClick={() => handleMoveClick(item.white.fen)}>
+                <button onClick={() => handleMoveClick(item.white.fen, item.turnNumber, true)}>
                   <b>{item.white.san}</b>
-                  <MoveBadge classification={item.white.classification} />
+                  {gameFinished && <MoveBadge classification={item.white.classification} />}
                 </button>
 
-                <button onClick={() => item.black && handleMoveClick(item.black.fen)}>
+                <button onClick={() => item.black && handleMoveClick(item.black.fen, item.turnNumber, false)}>
                   {item.black && (
                     <>
                       <b>{item.black.san}</b>
-                      <MoveBadge classification={item.black.classification} />
+                      {gameFinished && <MoveBadge classification={item.black.classification} />}
                     </>
                   )}
                 </button>
@@ -436,15 +615,17 @@ export default function GameBoard({
           <div className="stage-head">
             <div>
               <span className="eyebrow small">
-                {reviewMode ? 'MODO DE REVISÃO' : 'ANÁLISE EM TEMPO REAL'}
+                {reviewMode ? 'MODO DE REVISÃO' : gameFinished ? 'PARTIDA ENCERRADA' : 'PARTIDA DE TREINO'}
               </span>
 
               <h1>
                 {reviewMode
                   ? 'Revendo posição'
-                  : game.turn() === (userColor === 'white' ? 'w' : 'b')
-                    ? 'Sua vez'
-                    : 'Oponente'}
+                  : gameFinished
+                    ? resultLabel
+                    : game.turn() === (userColor === 'white' ? 'w' : 'b')
+                      ? 'Sua vez'
+                      : 'Oponente'}
               </h1>
             </div>
           </div>
@@ -468,7 +649,7 @@ export default function GameBoard({
                 style={{ padding: '6px 12px', fontSize: '11px' }}
                 onClick={exitReviewMode}
               >
-                Voltar ao jogo
+                {gameFinished ? 'Posição final' : 'Voltar ao jogo'}
               </button>
             </div>
           )}
@@ -552,93 +733,124 @@ export default function GameBoard({
             <div className="bot-avatar">A</div>
 
             <div>
-              <b>Análise do Stockfish</b>
+              <b>{gameFinished ? 'Treinador' : 'Partida de treino'}</b>
 
               <span>
                 <span className="live-dot" />
-                {assistEnabled ? 'Assistência ativada' : 'Assistência desativada'}
+                {!gameFinished
+                  ? 'Feedback oculto até o fim da partida'
+                  : assistEnabled ? 'Assistência ativada' : 'Assistência desativada'}
               </span>
             </div>
 
-            <button
-              onClick={() => setAssistEnabled(!assistEnabled)}
-              style={{
-                background: assistEnabled ? 'var(--gold)' : '#3a4038',
-                border: 'none',
-                borderRadius: '12px',
-                width: '44px',
-                height: '24px',
-                position: 'relative',
-                cursor: 'pointer',
-                transition: 'background 0.3s'
-              }}
-              aria-label={
-                assistEnabled
-                  ? 'Desativar assistência'
-                  : 'Ativar assistência'
-              }
-            >
-              <span style={{
-                position: 'absolute',
-                top: '2px',
-                left: assistEnabled ? '22px' : '2px',
-                width: '20px',
-                height: '20px',
-                background: assistEnabled ? '#1d211a' : '#8d958b',
-                borderRadius: '50%',
-                transition: 'left 0.3s'
-              }} />
-            </button>
+            {gameFinished && (
+              <button
+                onClick={() => setAssistEnabled(!assistEnabled)}
+                style={{
+                  background: assistEnabled ? 'var(--gold)' : '#3a4038',
+                  border: 'none',
+                  borderRadius: '12px',
+                  width: '44px',
+                  height: '24px',
+                  position: 'relative',
+                  cursor: 'pointer',
+                  transition: 'background 0.3s'
+                }}
+                aria-label={
+                  assistEnabled
+                    ? 'Desativar assistência'
+                    : 'Ativar assistência'
+                }
+              >
+                <span style={{
+                  position: 'absolute',
+                  top: '2px',
+                  left: assistEnabled ? '22px' : '2px',
+                  width: '20px',
+                  height: '20px',
+                  background: assistEnabled ? '#1d211a' : '#8d958b',
+                  borderRadius: '50%',
+                  transition: 'left 0.3s'
+                }} />
+              </button>
+            )}
           </div>
 
           <div className="chat-content">
-            {!assistEnabled && (
+            {!gameFinished && (
               <p className="message system">
-                Assistência desativada. Ative-a para receber feedback sobre seus lances.
+                Partida de treino em andamento. Jogue normalmente: o sistema está avaliando
+                seu nível. Os lances, a precisão e as recomendações aparecerão ao final da
+                partida (ou ao clicar em "Encerrar partida").
               </p>
             )}
 
-            {assistEnabled && !analysis && !loadingAnalysis && (
+            {gameFinished && (
+              <GameReport
+                result={resultLabel}
+                data={report}
+                loading={reportLoading}
+                message={reportMessage}
+                onSelectMoment={fen => handleMoveClick(fen)}
+                onRetry={generateReport}
+                onConfigureLLM={() => setLlmSettingsOpen(true)}
+              />
+            )}
+
+            {gameFinished && !assistEnabled && (
               <p className="message system">
-                Faça um lance e solicite o feedback do treinador quando estiver pronto.
+                Assistência desativada. Ative-a para pedir explicações sobre lances específicos.
               </p>
             )}
 
-            {loadingAnalysis && (
-              <p
-                className="message system"
-                style={{ color: '#d0af68' }}
-              >
-                🤔 Analisando seu lance...
-              </p>
-            )}
+            {gameFinished && assistEnabled && (
+              <div className="move-coach">
+                <span className="eyebrow small">ANÁLISE POR LANCE</span>
 
-            {analysis && assistEnabled && (
-              <div className="message markdown-body">
-                <ReactMarkdown>{analysis}</ReactMarkdown>
+                {!analysis && !loadingAnalysis && (
+                  <p className="message system">
+                    Selecione um dos seus lances no histórico e peça a explicação do treinador.
+                  </p>
+                )}
+
+                {loadingAnalysis && (
+                  <p className="message system" style={{ color: '#d0af68' }}>
+                    🤔 Analisando seu lance...
+                  </p>
+                )}
+
+                {analysis && (
+                  <div className="message markdown-body">
+                    <ReactMarkdown>{analysis}</ReactMarkdown>
+                  </div>
+                )}
               </div>
             )}
           </div>
 
-          <div style={{ padding: '0 18px 18px' }}>
-            <button
-              className="outline-btn"
-              style={{
-                width: '100%',
-                justifyContent: 'center'
-              }}
-              onClick={() => {
-                requestMoveEvaluation()
-              }}
-              disabled={loadingAnalysis || !semanticAnalysisReady}
-            >
-              {loadingAnalysis
-                ? 'Analisando...'
-                : semanticAnalysisReady
-                  ? 'Avaliar lance'
-                  : 'Avaliação não disponível'}
-            </button>
-          </div>
+          {gameFinished && assistEnabled && (
+            <div style={{ padding: '0 18px 18px' }}>
+              <button
+                className="outline-btn"
+                style={{
+                  width: '100%',
+                  justifyContent: 'center'
+                }}
+                onClick={() => {
+                  requestMoveEvaluation(selectedMove?.turnNumber, selectedMove?.isWhite)
+                }}
+                disabled={loadingAnalysis || !canEvaluateSelected}
+              >
+                {loadingAnalysis
+                  ? 'Analisando...'
+                  : !canEvaluateSelected
+                    ? 'Selecione um lance seu'
+                    : selectedMove
+                      ? 'Avaliar lance selecionado'
+                      : 'Avaliar último lance'}
+              </button>
+            </div>
+          )}
         </aside>
       </div>
 

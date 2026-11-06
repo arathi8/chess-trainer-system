@@ -11,13 +11,11 @@ from services.llm_service import (
     DEFAULT_PROVIDER,
     LLMError,
     LLMNotConfiguredError,
+    generate_game_report,
     generate_move_evaluation,
-    LLMService,
-    PROMPT_ONLY_PROVIDER,
-    format_prompt_only,
     get_provider_options,
 )
-from services.report_service import compute_game_stats, generate_report_prompt
+from services.report_service import compute_game_stats
 
 app = FastAPI(title="Chess Trainer System API")
 
@@ -77,7 +75,7 @@ class GameReportRequest(BaseModel):
     moves: list[GameReportMove]
     total_user_moves: Optional[int] = None
     lenient_plies: list[int] = []
-    # BYOK settings, as in SemanticEvaluationRequest
+    # BYOK settings, as in MoveEvaluationRequest
     provider: str = DEFAULT_PROVIDER
     api_key: Optional[str] = None
     model: Optional[str] = None
@@ -170,28 +168,23 @@ def game_report(payload: GameReportRequest):
     except (KeyError, ValueError) as e:
         raise HTTPException(status_code=400, detail=f"Invalid move data: {e}")
 
-    prompt = generate_report_prompt(
-        stats,
-        result=payload.result,
-        termination=payload.termination,
-        pgn=payload.pgn,
-        lenient_plies=payload.lenient_plies,
-    )
-
-    if payload.provider.lower() == PROMPT_ONLY_PROVIDER:
-        return GameReportResponse(stats=stats, report=format_prompt_only(prompt))
-
     try:
-        llm = LLMService(
+        report = generate_game_report(
+            stats,
+            result=payload.result,
+            termination=payload.termination,
+            pgn=payload.pgn,
+            lenient_plies=payload.lenient_plies,
             provider=payload.provider,
             api_key=payload.api_key,
             model=payload.model,
             base_url=payload.base_url,
         )
-        return GameReportResponse(stats=stats, report=llm.request(prompt))
     except (LLMError, ValueError) as e:
         # LLMNotConfiguredError is a subclass: the stats are still useful without the narrative.
         return GameReportResponse(stats=stats, report_error=str(e))
+
+    return GameReportResponse(stats=stats, report=report)
 
 
 if __name__ == "__main__":

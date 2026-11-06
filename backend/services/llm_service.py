@@ -1,6 +1,8 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 
 from openai import OpenAI, APIError as OpenAIAPIError
+
+from services.report_service import generate_report_prompt
 
 SYSTEM_PROMPT = "You are a chess expert assistant. Respond using Markdown formatting."
 TIMEOUT = 60.0
@@ -107,6 +109,26 @@ class LLMService:
             raise LLMError(f"[{self.provider}/{self.model}] {e}") from e
 
 
+def complete_prompt(
+    prompt: str,
+    provider: str = DEFAULT_PROVIDER,
+    api_key: Optional[str] = None,
+    model: Optional[str] = None,
+    base_url: Optional[str] = None,
+) -> str:
+    """Sends the prompt to the configured LLM, or returns it as-is with the prompt-only provider."""
+    if provider.lower() == PROMPT_ONLY_PROVIDER:
+        return format_prompt_only(prompt)
+
+    llm_service = LLMService(
+        provider=provider,
+        api_key=api_key,
+        model=model,
+        base_url=base_url,
+    )
+    return llm_service.request(prompt)
+
+
 def format_analysis_block(analysis: Dict[str, Any]) -> str:
     """Formats the analysis summary dictionary into a standardized text block for the LLM."""
     label = analysis.get("label", "POSITION EVALUATION")
@@ -157,15 +179,31 @@ def generate_move_evaluation(
     Instantiates the LLM service on demand using user-provided credentials or defaults.
     With the prompt-only provider, returns the generated prompt without calling any LLM.
     """
-    prompt = generate_prompt(move_analysis)
+    return complete_prompt(generate_prompt(move_analysis), provider, api_key, model, base_url)
 
-    if provider.lower() == PROMPT_ONLY_PROVIDER:
-        return format_prompt_only(prompt)
 
-    llm_service = LLMService(
-        provider=provider,
-        api_key=api_key,
-        model=model,
-        base_url=base_url,
+def generate_game_report(
+    stats: Dict[str, Any],
+    result: str,
+    termination: str,
+    pgn: str = "",
+    lenient_plies: Optional[List[int]] = None,
+    # BYOK parameters forwarded from API/Frontend request
+    provider: str = DEFAULT_PROVIDER,
+    api_key: Optional[str] = None,
+    model: Optional[str] = None,
+    base_url: Optional[str] = None,
+) -> str:
+    """Writes the coach's post-game report from the game stats, as returned by compute_game_stats.
+
+    Instantiates the LLM service on demand using user-provided credentials or defaults.
+    With the prompt-only provider, returns the generated prompt without calling any LLM.
+    """
+    prompt = generate_report_prompt(
+        stats,
+        result=result,
+        termination=termination,
+        pgn=pgn,
+        lenient_plies=lenient_plies,
     )
-    return llm_service.request(prompt)
+    return complete_prompt(prompt, provider, api_key, model, base_url)

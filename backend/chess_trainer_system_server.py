@@ -15,6 +15,7 @@ from services.llm_service import (
     generate_move_evaluation,
     get_provider_options,
 )
+from services.openings_service import identify_opening
 from services.report_service import compute_game_stats
 
 app = FastAPI(title="Chess Trainer System API")
@@ -167,6 +168,11 @@ def game_report(payload: GameReportRequest):
         stats = compute_game_stats(moves, payload.user_color, payload.total_user_moves)
     except (KeyError, ValueError) as e:
         raise HTTPException(status_code=400, detail=f"Invalid move data: {e}")
+
+    try:
+        stats["opening"] = identify_opening(payload.pgn, payload.user_color)
+    except ValueError:
+        stats["opening"] = None
 
     try:
         report = generate_game_report(

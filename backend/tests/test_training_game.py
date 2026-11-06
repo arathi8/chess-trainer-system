@@ -240,3 +240,12 @@ def test_identify_opening_follows_named_line():
 def test_identify_opening_non_standard_start():
     pgn = '[SetUp "1"]\n[FEN "8/8/4k3/8/8/4K3/R7/r7 w - - 0 40"]\n\n40. Ra3'
     assert identify_opening(pgn, "white") is None
+
+
+def test_report_prompt_includes_opening_section():
+    stats = compute_game_stats([GOOD_MOVE, HUNG_BISHOP, MISSED_MATE], "white")
+    stats["opening"] = identify_opening("1. e4 e5 2. Ba6 bxa6", "white")
+    prompt = generate_report_prompt(stats, "0-1", "resignation")
+    assert "Opening & theory" in prompt
+    assert "C20 King's Pawn Game" in prompt
+    assert "Left theory at move 2. Ba6, played by the user" in prompt

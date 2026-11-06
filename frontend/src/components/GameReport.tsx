@@ -22,6 +22,19 @@ export interface KeyMoment {
   tags: string[]
 }
 
+export interface OpeningInfo {
+  eco: string
+  name: string
+  book_moves: string[]
+  deviation: {
+    move_number: string
+    san: string
+    by: 'user' | 'opponent'
+    kind: 'left_theory' | 'end_of_theory'
+    theory_moves: string[]
+  } | null
+}
+
 export interface GameStats {
   analysed_moves: number
   total_user_moves: number
@@ -30,6 +43,7 @@ export interface GameStats {
   phases: Record<string, PhaseStats>
   key_moments: KeyMoment[]
   error_tags: Record<string, number>
+  opening?: OpeningInfo | null
 }
 
 export interface GameReportData {
@@ -59,6 +73,25 @@ const TAG_LABELS: Record<string, string> = {
   missed_mate: 'mate perdido',
   allowed_mate: 'permitiu mate',
   walked_into_tactic: 'caiu em tática'
+}
+
+function OpeningCard({ opening }: { opening: OpeningInfo }) {
+  const { deviation } = opening
+  let theoryNote = 'A partida não saiu da teoria conhecida.'
+  if (deviation?.kind === 'end_of_theory') {
+    theoryNote = `A teoria conhecida termina em ${deviation.move_number} ${deviation.san}.`
+  } else if (deviation) {
+    const who = deviation.by === 'user' ? 'Você saiu' : 'O oponente saiu'
+    theoryNote = `${who} da teoria em ${deviation.move_number} ${deviation.san} (teoria: ${deviation.theory_moves.join(', ')}).`
+  }
+
+  return (
+    <div className="report-opening">
+      <span>{opening.eco}</span>
+      <b>{opening.name}</b>
+      <small>{theoryNote}</small>
+    </div>
+  )
 }
 
 interface GameReportProps {
@@ -104,6 +137,8 @@ export default function GameReport({
               </small>
             )}
           </div>
+
+          {data.stats.opening && <OpeningCard opening={data.stats.opening} />}
 
           <div className="report-counts">
             {COUNT_ROWS.map(row => (

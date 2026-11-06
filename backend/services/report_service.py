@@ -204,6 +204,49 @@ def compute_game_stats(moves: List[Dict[str, Any]], user_color: str, total_user_
 
 # --- LLM prompt ---
 
+def format_san_line(sans: List[str], first_ply: int = 0) -> str:
+    """['e4', 'e5', 'Nf3'] -> '1. e4 e5 2. Nf3'."""
+    parts = []
+    for i, san in enumerate(sans):
+        ply = first_ply + i
+        if ply % 2 == 0:
+            parts.append(f"{ply // 2 + 1}. {san}")
+        elif i == 0:
+            parts.append(f"{ply // 2 + 1}... {san}")
+        else:
+            parts.append(san)
+    return " ".join(parts)
+
+
+def opening_lines(opening: Optional[Dict[str, Any]]) -> List[str]:
+    if not opening:
+        return [
+            "Not identified by the database (non-standard start or unusual first moves). Name the opening from the "
+            "PGN only if you are confident; otherwise describe it as an irregular opening. Do not claim that "
+            "or where the game left theory, since that could not be determined."
+        ]
+
+    lines = [
+        f"Opening: {opening['eco']} {opening['name']}",
+        f"Reference line for this name: {opening['reference_line']}",
+        f"Moves played within theory: {format_san_line(opening['book_moves']) or '(none)'}",
+    ]
+    deviation = opening.get("deviation")
+    if deviation is None:
+        lines.append("The game never left the database's theory.")
+    elif deviation["kind"] == "end_of_theory":
+        lines.append(
+            f"The known theory ran out at move {deviation['move_number']} {deviation['san']} "
+            f"(played by the {deviation['by']}); from there on the game was out of book."
+        )
+    else:
+        lines.append(
+            f"Left theory at move {deviation['move_number']} {deviation['san']}, played by the {deviation['by']}. "
+            f"Theoretical moves at that point: {', '.join(deviation['theory_moves'])}."
+        )
+    return lines
+
+
 def generate_report_prompt(
     stats: Dict[str, Any],
     result: str,
@@ -216,11 +259,18 @@ def generate_report_prompt(
         "The game was a test to gauge the user's skill. Write a post-game report in English, using Markdown, "
         "with exactly these sections:",
         "1. **Overall assessment**: a rough skill band (beginner / intermediate / advanced) justified by the numbers below. Do not claim an Elo rating.",
-        "2. **Strengths**: what the user did well, based on the data.",
-        "3. **Areas for improvement**: ranked by importance; each one must cite move numbers from the data.",
-        "4. **Specific guidance**: 2 to 4 concrete, actionable training suggestions tied to the error themes below.",
-        "5. **Key moments**: one short explanation per key moment, comparing the played move with the best move.",
-        "Base every claim on the data below. Only mention moves that appear in it. Be encouraging but honest and concise.",
+        "2. **Opening & theory**: comment on the opening and the theoretical line played: whether the user followed theory, "
+        "where the game left it, who left it and whether that was a good decision (use the opening-phase stats and key moments), "
+        "and the main ideas and typical plans of this opening for the user's side. End with 2 to 3 concrete study "
+        "recommendations for this opening (e.g. the theoretical move to learn at the point where the user left theory, "
+        "the main line or variation to study next, typical pawn structures and plans).",
+        "3. **Strengths**: what the user did well, based on the data.",
+        "4. **Areas for improvement**: ranked by importance; each one must cite move numbers from the data.",
+        "5. **Specific guidance**: 2 to 4 concrete, actionable training suggestions tied to the error themes below.",
+        "6. **Key moments**: one short explanation per key moment, comparing the played move with the best move.",
+        "Base every claim on the data below. Only mention moves that appear in it. For opening theory, do not invent "
+        "move sequences beyond the reference line and theoretical moves given, and name variations only when confident. "
+        "Be encouraging but honest and concise.",
         "",
         "--- GAME ---",
         f"User played: {stats['user_color']}",
@@ -238,6 +288,8 @@ def generate_report_prompt(
             f"{phase}: {data['moves']} moves, accuracy {data['accuracy']}%, "
             f"inaccuracies {data['inaccuracies']}, mistakes {data['mistakes']}, blunders {data['blunders']}"
         )
+
+    lines += ["", "--- OPENING (from the Lichess opening database) ---", *opening_lines(stats.get("opening"))]
 
     lines += ["", "--- RECURRING ERROR THEMES (mistakes and blunders) ---"]
     if stats["error_tags"]:

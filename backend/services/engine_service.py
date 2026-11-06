@@ -8,6 +8,17 @@ from typing import Any, Dict, Optional, Tuple
 import chess
 import chess.engine
 
+# Training games: during the first GRACE_FULLMOVES the engine avoids moves that push its
+# win probability above GRACE_WIN_CAP, so early mistakes are not punished at once.
+GRACE_FULLMOVES = 12
+GRACE_WIN_CAP = 70.0
+# Lenient alternatives must still keep the engine at least this well off (it never gives the game away).
+GRACE_WIN_FLOOR = 50.0
+
+# Candidate moves searched per training move. 3 at depth 20 costs about the same as a plain
+# engine.play at depth 20 (~2s); 5 candidates took 8-10s.
+TRAINING_MULTIPV = 3
+
 def find_stockfish() -> str:
     """Find the Stockfish executable bundled with the project or on PATH."""
     configured_path = os.environ.get("STOCKFISH_PATH")
@@ -148,10 +159,36 @@ def get_move_classification(
 
 # --- orchestator calls ---
 
-def get_engine_move(fen: str, min_depth: int = 20) -> str:
+def choose_lenient_move(board: chess.Board, candidates: list[chess.engine.InfoDict]) -> Tuple[chess.Move, bool]:
+    """
+    Picks the strongest candidate whose win% (engine's POV) stays within [GRACE_WIN_FLOOR, GRACE_WIN_CAP].
+    Candidates are sorted best-first. When the best move is already at or under the cap, it is played
+    (full strength). Otherwise the engine takes the first sound candidate under the cap, or, if every
+    sound candidate exceeds it, the lowest-scoring sound one.
+    Returns the move and whether it differs from the engine's best move.
+    """
+    scored = [
+        (info["pv"][0], cp_to_win_percent(extract_cp(info["score"], board.turn)))
+        for info in candidates
+        if info.get("pv") and "score" in info
+    ]
+    if not scored:
+        raise ValueError("Engine returned no candidate moves")
+
+    best_move, best_win = scored[0]
+    if best_win <= GRACE_WIN_CAP:
+        return best_move, False
+
+    sound = [(move, win) for move, win in scored if win >= GRACE_WIN_FLOOR]
+    chosen = next((move for move, win in sound if win <= GRACE_WIN_CAP), sound[-1][0])
+    return chosen, chosen != best_move
+
+
+def get_engine_move(fen: str, min_depth: int = 20, training: bool = False) -> Tuple[str, bool]:
     """
     Calculate the engine's move for the given position.
-    Raises ValueError on an invalid or finished position.
+    In training mode the engine is lenient during the opening (see GRACE_* constants).
+    Returns (move_uci, grace_applied). Raises ValueError on an invalid or finished position.
     """
     board = parse_board(fen)
     if board is None:
@@ -160,12 +197,17 @@ def get_engine_move(fen: str, min_depth: int = 20) -> str:
         raise ValueError("The game is already over in this position")
 
     stockfish_path = find_stockfish()
+    limit = chess.engine.Limit(depth=min_depth)
     with chess.engine.SimpleEngine.popen_uci(stockfish_path) as engine:
-        result = engine.play(board, chess.engine.Limit(depth=min_depth))
+        if training and board.fullmove_number <= GRACE_FULLMOVES:
+            candidates = engine.analyse(board, limit, multipv=TRAINING_MULTIPV)
+            move, grace_applied = choose_lenient_move(board, candidates)
+            return move.uci(), grace_applied
+
+        result = engine.play(board, limit)
         if result.move is None:
             raise ValueError("Engine returned no move")
-        return result.move.uci()
-
+        return result.move.uci(), False
 
 
 def get_move_analysis(

@@ -29,9 +29,12 @@ app.add_middleware(
 # --- Request / Response Contracts ---
 class EngineMoveRequest(BaseModel):
     fen: str
+    # Training games make the engine lenient towards early mistakes
+    training: bool = False
 
 class EngineMoveResponse(BaseModel):
     engine_move: str
+    grace_applied: bool = False
 
 class EngineAnalysisRequest(BaseModel):
     fen: str  
@@ -71,7 +74,8 @@ class LLMProvidersResponse(BaseModel):
 def engine_move(payload: EngineMoveRequest):
     """Calculates the best response move from Stockfish for the opponent."""
     try:
-        return {"engine_move": get_engine_move(payload.fen)}
+        engine_move, grace_applied = get_engine_move(payload.fen, training=payload.training)
+        return {"engine_move": engine_move, "grace_applied": grace_applied}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

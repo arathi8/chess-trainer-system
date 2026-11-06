@@ -183,7 +183,7 @@ export default function GameBoard({
       const response = await fetch(`${API_BASE_URL}/engine-move`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fen: currentFen })
+        body: JSON.stringify({ fen: currentFen, training: true })
       })
 
       if (!response.ok) throw new Error(`HTTP error: ${response.status}`)

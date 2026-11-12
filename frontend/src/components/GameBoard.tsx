@@ -60,6 +60,12 @@ interface ReportContext {
 
 const MIN_MOVES_FOR_REPORT = 3
 
+// Tints the origin and destination squares of the move on the board, as lichess does.
+const LAST_MOVE_STYLE = { backgroundColor: 'rgba(155, 199, 0, 0.41)' }
+
+const lastMoveStyles = (move?: MoveNode) =>
+  move ? { [move.from]: LAST_MOVE_STYLE, [move.to]: LAST_MOVE_STYLE } : {}
+
 function describeResult(game: Chess, termination: string, userColor: PlayerColor): { result: string; label: string } {
   if (termination === 'resignation') {
     return { result: userColor === 'white' ? '0-1' : '1-0', label: 'Você abandonou a partida' }
@@ -528,7 +534,7 @@ export default function GameBoard({
     }
   }
 
-  // After the game, the coach explains the move on the board (either side's).
+  // The move on the board: its squares are highlighted, and after the game the coach explains it (either side's).
   const selectedNode = cursorId !== ROOT ? tree.nodes[cursorId] : undefined
   const selectedIsUsers = selectedNode ? isUserPly(selectedNode.ply) : false
   const explanation = explanations[cursorId]
@@ -617,6 +623,7 @@ export default function GameBoard({
               <Chessboard
                 options={{
                   position: displayFen,
+                  squareStyles: lastMoveStyles(selectedNode),
                   boardOrientation: userColor,
                   onPieceDrop: ({ sourceSquare, targetSquare }) => {
                     if (!sourceSquare || !targetSquare) return false

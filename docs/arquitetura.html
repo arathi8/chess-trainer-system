@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Arquitetura Chess Trainer</title>
+<style>
+  :root {
+    --bg: #f7f5ef;
+    --surface: #ffffff;
+    --ink: #1c1f1c;
+    --muted: #5f645d;
+    --line: #dedbd1;
+    --accent: #9a7330;
+    --accent-soft: #f1e6cf;
+    --code-bg: #f0ede4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #111311;
+      --surface: #191c1a;
+      --ink: #f4f1e8;
+      --muted: #a3a79f;
+      --line: #303530;
+      --accent: #e8c887;
+      --accent-soft: #2b271c;
+      --code-bg: #202420;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #111311;
+    --surface: #191c1a;
+    --ink: #f4f1e8;
+    --muted: #a3a79f;
+    --line: #303530;
+    --accent: #e8c887;
+    --accent-soft: #2b271c;
+    --code-bg: #202420;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 16px 80px; }
+  header { border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 8px; }
+  .eyebrow { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+  h1 { font-size: clamp(28px, 5vw, 40px); margin: 8px 0 8px; line-height: 1.15; }
+  h2 { font-size: 24px; margin: 48px 0 8px; }
+  h3 { font-size: 18px; margin: 28px 0 8px; }
+  p { margin: 8px 0; }
+  .lead { color: var(--muted); max-width: 70ch; }
+  nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 0; }
+  nav a {
+    font-size: 14px; color: var(--ink); text-decoration: none;
+    border: 1px solid var(--line); background: var(--surface);
+    padding: 4px 12px; border-radius: 999px;
+  }
+  nav a:hover { border-color: var(--accent); }
+  .principle {
+    background: var(--accent-soft); border-left: 4px solid var(--accent);
+    padding: 16px 20px; border-radius: 8px; margin: 24px 0;
+  }
+  .principle b { display: block; font-size: 18px; margin-bottom: 4px; }
+  figure {
+    margin: 16px 0; background: var(--surface); border: 1px solid var(--line);
+    border-radius: 12px; padding: 16px; overflow-x: auto;
+  }
+  figure .diagram { min-width: 560px; text-align: center; }
+  figure .diagram svg { max-width: 100%; height: auto; }
+  figcaption { font-size: 13px; color: var(--muted); margin-top: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; background: var(--surface); }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; margin: 12px 0; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+  tr:last-child td { border-bottom: 0; }
+  code { background: var(--code-bg); padding: 1px 6px; border-radius: 4px; font-size: .9em; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin: 12px 0; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .card h4 { margin: 0 0 4px; font-size: 15px; }
+  .card p { margin: 0; color: var(--muted); font-size: 14px; }
+  footer { margin-top: 56px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 16px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="eyebrow">MC857A · Documentação técnica</span>
+  <h1>Chess Trainer System — Arquitetura</h1>
+  <p class="lead">Visão visual do estado atual do projeto (branch <code>feat/learn-repertoire</code>, sincronizada com o commit <code>a719b4c</code> em 2026-11-11). O texto completo está nos arquivos Markdown desta pasta; esta página reúne os diagramas renderizados.</p>
+  <nav>
+    <a href="#principio">Princípio</a>
+    <a href="#contexto">Contexto</a>
+    <a href="#componentes">Componentes</a>
+    <a href="#api">API</a>
+    <a href="#fluxos">Fluxos</a>
+    <a href="#motor">Lance do motor</a>
+    <a href="#patterns">Design patterns</a>
+  </nav>
+</header>
+
+<section id="principio">
+  <div class="principle">
+    <b>O Stockfish é a fonte da verdade; a LLM é o professor que traduz.</b>
+    Todo fato mostrado ao jogador é calculado de forma determinística (motor, heurísticas táticas, base de aberturas). A LLM recebe esses fatos em um prompt estruturado e só os explica de forma didática.
+  </div>
+  <figure>
+    <div class="diagram" data-src="d-principio"></div>
+  </figure>
+</section>
+
+<section id="contexto">
+  <h2>Contexto</h2>
+  <p>Tudo roda localmente. O backend não guarda estado: a partida, as análises acumuladas e a configuração da LLM ficam no navegador e são enviadas em cada requisição.</p>
+  <figure>
+    <div class="diagram" data-src="d-contexto"></div>
+    <figcaption>Nível 1 (C4): sistema, usuários e dependências externas.</figcaption>
+  </figure>
+</section>
+
+<section id="componentes">
+  <h2>Containers e componentes</h2>
+  <figure>
+    <div class="diagram" data-src="d-componentes"></div>
+    <figcaption>Nível 2/3 (C4): componentes React, módulos Python e integrações.</figcaption>
+  </figure>
+  <div class="grid">
+    <div class="card"><h4>engine_service</h4><p>Localiza o Stockfish, escolhe o lance do motor (normal, leniente, variado), analisa antes/depois e classifica pela perda de Win%.</p></div>
+    <div class="card"><h4>report_service</h4><p>Funções puras: precisão (fórmula Lichess), fases, temas táticos, momentos-chave e prompt do relatório.</p></div>
+    <div class="card"><h4>openings_service</h4><p>Indexa <code>openings.tsv</code> uma vez (pré-carga em <em>thread</em> na inicialização, protegida por <em>lock</em>), identifica a abertura e onde e por quem a partida saiu da teoria.</p></div>
+    <div class="card"><h4>repertoire_service</h4><p>Modo repertório (em desenvolvimento): catálogo família → variante com cor sugerida e árvore de teoria da abertura escolhida.</p></div>
+    <div class="card"><h4>llm_service</h4><p>Catálogo BYOK, cliente compatível com OpenAI (Gemini por padrão), modo somente prompt e prompt de avaliação de lance.</p></div>
+    <div class="card"><h4>GameBoard.tsx</h4><p>Orquestrador do frontend: tabuleiro, turnos, chamadas à API, fila de análise, relatório e análise por lance.</p></div>
+    <div class="card"><h4>App.tsx</h4><p>Máquina de telas e estado global (cor, modo, partida inicial, configuração da LLM).</p></div>
+  </div>
+</section>
+
+<section id="api">
+  <h2>API REST</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Rota</th><th>Entrada</th><th>Saída</th><th>Custo</th></tr></thead>
+    <tbody>
+      <tr><td><code>POST /api/engine-move</code></td><td>fen, training</td><td>engine_move, grace_applied</td><td>1 busca prof. 20</td></tr>
+      <tr><td><code>POST /api/engine-analysis</code></td><td>fen, move</td><td>análises antes/depois, classificação, delta</td><td>2 buscas prof. 20</td></tr>
+      <tr><td><code>GET /api/llm-providers</code></td><td>—</td><td>catálogo de provedores</td><td>—</td></tr>
+      <tr><td><code>POST /api/move-evaluation</code></td><td>move_analysis, mover, BYOK</td><td>evaluation (Markdown)</td><td>1 chamada LLM</td></tr>
+      <tr><td><code>POST /api/game-stats</code></td><td>moves do usuário, pgn, cor, total_user_moves</td><td>stats (precisão, fases, momentos-chave, abertura)</td><td>só CPU</td></tr>
+      <tr><td><code>POST /api/game-report</code></td><td>stats, resultado, término, pgn, lenient_plies, imported, BYOK</td><td>report (Markdown); erros 400/502</td><td>1 chamada LLM</td></tr>
+      <tr><td><code>GET /api/repertoire/catalog</code></td><td>—</td><td>famílias → variantes, ECO, linha de referência, cor sugerida</td><td>só CPU</td></tr>
+      <tr><td><code>GET /api/repertoire/tree?name=</code></td><td>nome da abertura</td><td>árvore de teoria (nós recursivos); 404 se não existir</td><td>só CPU</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section id="fluxos">
+  <h2>Fluxos</h2>
+
+  <h3>Navegação entre telas</h3>
+  <figure><div class="diagram" data-src="d-telas"></div></figure>
+
+  <h3>Novo jogo: um lance do usuário</h3>
+  <p>Cada lance do usuário dispara duas requisições: a resposta do motor (bloqueia o turno) e a classificação em segundo plano (oculta até o fim). O lance do motor também é classificado em segundo plano assim que chega.</p>
+  <figure><div class="diagram" data-src="d-lance"></div></figure>
+
+  <h3>Fim da partida e relatório</h3>
+  <p>Duas etapas: as estatísticas determinísticas aparecem primeiro; a narrativa da LLM chega depois e pode ser gerada de novo sozinha.</p>
+  <figure><div class="diagram" data-src="d-relatorio"></div></figure>
+
+  <h3>Carregar PGN</h3>
+  <figure><div class="diagram" data-src="d-pgn"></div></figure>
+
+  <h3>Explicação de um lance</h3>
+  <figure><div class="diagram" data-src="d-explicacao"></div></figure>
+</section>
+
+<section id="motor">
+  <h2>Decisão do lance do motor (modo treino)</h2>
+  <figure><div class="diagram" data-src="d-motor"></div></figure>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Classificação</th><th>Regra (perda de Win%)</th><th>Badge</th></tr></thead>
+    <tbody>
+      <tr><td>Best Move</td><td>igual ao 1º lance da linha do Stockfish</td><td><code>!</code></td></tr>
+      <tr><td>Good Move</td><td>≤ 5</td><td><code>★</code></td></tr>
+      <tr><td>Inaccuracy</td><td>5 – 12</td><td><code>?!</code></td></tr>
+      <tr><td>Mistake</td><td>12 – 25</td><td><code>?</code></td></tr>
+      <tr><td>Blunder</td><td>&gt; 25</td><td><code>??</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section id="patterns">
+  <h2>Design patterns identificados</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Padrão</th><th>Camada</th><th>Onde</th></tr></thead>
+    <tbody>
+      <tr><td>Camadas + backend sem estado</td><td>Arquitetura</td><td>rotas → services → Stockfish / LLM / TSV</td></tr>
+      <tr><td>Oráculo determinístico + narrador LLM</td><td>Arquitetura</td><td>engine/report/openings → llm_service</td></tr>
+      <tr><td>Pipeline em dois estágios</td><td>Arquitetura</td><td><code>/game-stats</code> (stats → abertura) → <code>/game-report</code> (prompt → LLM)</td></tr>
+      <tr><td>Renderização progressiva</td><td>Arquitetura</td><td>estatísticas na tela antes da narrativa da LLM</td></tr>
+      <tr><td>Warm-up na inicialização</td><td>Arquitetura</td><td><code>lifespan</code> pré-carrega as aberturas em <em>thread</em></td></tr>
+      <tr><td>Núcleo funcional, casca imperativa</td><td>Arquitetura</td><td>report_service, openings_service, choose_*</td></tr>
+      <tr><td>Degradação graciosa</td><td>Arquitetura</td><td>falha da LLM mantém as estatísticas na tela, com Configurar / Gerar novamente</td></tr>
+      <tr><td>Facade</td><td>Backend</td><td>generate_move_evaluation, generate_game_report, get_move_analysis</td></tr>
+      <tr><td>Adapter / Gateway</td><td>Backend</td><td>LLMService (API OpenAI para qualquer provedor compatível); python-chess para UCI</td></tr>
+      <tr><td>Strategy (implícito)</td><td>Backend</td><td>lance normal / leniente / variado; provedor vs. somente prompt; prompt por mover</td></tr>
+      <tr><td>Registry por tabela</td><td>Backend</td><td>PROVIDER_DEFAULTS, TAG_DESCRIPTIONS</td></tr>
+      <tr><td>Null Object (variante)</td><td>Backend</td><td>provedor <code>prompt</code></td></tr>
+      <tr><td>Builder de prompt</td><td>Backend</td><td>generate_prompt, generate_report_prompt</td></tr>
+      <tr><td>DTO</td><td>Backend</td><td>modelos Pydantic</td></tr>
+      <tr><td>Tradução de exceções</td><td>Backend</td><td>LLMError → 502, LLMNotConfiguredError → 400</td></tr>
+      <tr><td>Singleton thread-safe</td><td>Backend</td><td>load_openings (cache global + <code>threading.Lock</code>)</td></tr>
+      <tr><td>Trie / estrutura recursiva</td><td>Backend</td><td>build_repertoire_tree, DTO RepertoireNode</td></tr>
+      <tr><td>Índice imutável tipado</td><td>Backend</td><td>OpeningsIndex / OpeningLine (NamedTuple)</td></tr>
+      <tr><td>Cadeia de fallback</td><td>Backend</td><td>find_stockfish</td></tr>
+      <tr><td>Máquina de estados</td><td>Frontend</td><td><code>screen</code> em App.tsx</td></tr>
+      <tr><td>Container / Presentational</td><td>Frontend</td><td>GameBoard vs. GameReport, Modal, ColorSelector</td></tr>
+      <tr><td>Lifting state up + callbacks</td><td>Frontend</td><td>llmConfig, onNewGame, onSelectColor</td></tr>
+      <tr><td>Composição (children)</td><td>Frontend</td><td>Modal</td></tr>
+      <tr><td>Atualização imutável / Prototype</td><td>Frontend</td><td>cloneGame</td></tr>
+      <tr><td>Latest ref + guarda de idempotência</td><td>Frontend</td><td>finishedRef, gameStartedRef</td></tr>
+      <tr><td>Fire-and-track</td><td>Frontend</td><td>analyseInBackground + pendingAnalysesRef</td></tr>
+      <tr><td>Worker pool com retry idempotente</td><td>Frontend</td><td>analyseMoves (concorrência 2, só lances sem análise)</td></tr>
+      <tr><td>Gateway de persistência</td><td>Frontend</td><td>llmConfig.ts (sessionStorage)</td></tr>
+      <tr><td>UI dirigida pelo servidor</td><td>Frontend</td><td>LLMSettings a partir de /llm-providers</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Detalhes, grau de aplicação e sugestões de evolução em <a href="04-design-patterns.md">04-design-patterns.md</a>. Débitos técnicos em <a href="05-observacoes-tecnicas.md">05-observacoes-tecnicas.md</a>.</p>
+</section>
+
+<footer>Gerado a partir da leitura do código. Fonte de verdade textual: <a href="README.md">docs/README.md</a>.</footer>
+</div>
+
+<!-- Diagram sources (Mermaid). Kept in sync with the Markdown files. -->
+<script type="text/plain" id="d-principio">
+flowchart LR
+    SF["Stockfish<br/>(avaliação numérica)"] --> DET["Camada determinística<br/>classificação · estatísticas · aberturas · temas táticos"]
+    DB[("openings.tsv<br/>Lichess")] --> DET
+    DET --> PR["Prompt estruturado<br/>(dados ancorados)"]
+    PR --> LLM["LLM<br/>(narrativa didática)"]
+    LLM --> J(["Jogador"])
+    DET -- "badges, precisão, tabelas" --> J
+</script>
+
+<script type="text/plain" id="d-contexto">
+flowchart TB
+    user(["👤 Jogador<br/>navegador"])
+    subgraph sys["Chess Trainer System"]
+        spa["SPA React<br/>localhost:5173"]
+        api["API FastAPI<br/>localhost:8000"]
+    end
+    sf["Stockfish<br/>processo local via UCI"]
+    llm["Provedor LLM<br/>Gemini ou API compatível com OpenAI"]
+    tsv[("openings.tsv<br/>Lichess, CC0")]
+    cli(["🖥️ Desenvolvedor<br/>CLI"])
+    user -- "joga, importa PGN,<br/>lê relatório" --> spa
+    spa -- "HTTP/JSON" --> api
+    cli -- "HTTP/JSON" --> api
+    api -- "UCI (stdin/stdout)" --> sf
+    api -- "HTTPS, chave do usuário" --> llm
+    api -- "leitura no 1º uso" --> tsv
+</script>
+
+<script type="text/plain" id="d-componentes">
+flowchart LR
+    subgraph FE["Frontend — React 19 + TypeScript + Vite"]
+        direction TB
+        App["App.tsx<br/>máquina de telas + estado global"]
+        Landing["LandingPage"]
+        Loader["LoadPGNPage"]
+        Color["ColorSelector"]
+        Board["GameBoard<br/>orquestrador da partida"]
+        Report["GameReport"]
+        Settings["LLMSettings"]
+        Modal["Modal"]
+        Cfg["llmConfig.ts<br/>catálogo + sessionStorage"]
+        ChessJs[["chess.js"]]
+        RCB[["react-chessboard"]]
+        App --> Landing & Loader & Color & Board
+        Board --> Report & Settings
+        Color --> Modal
+        Settings --> Modal
+        Settings --> Cfg
+        App --> Cfg
+        Board --> ChessJs & RCB
+        Loader --> ChessJs
+    end
+    subgraph BE["Backend — Python / FastAPI"]
+        direction TB
+        Server["chess_trainer_system_server.py<br/>rotas + DTOs Pydantic"]
+        Engine["engine_service"]
+        ReportS["report_service"]
+        Open["openings_service"]
+        Rep["repertoire_service"]
+        LLMS["llm_service"]
+        Server --> Engine & ReportS & Open & Rep & LLMS
+        Rep --> Open
+        LLMS --> ReportS
+    end
+    Board -- "engine-move · engine-analysis<br/>move-evaluation · game-stats · game-report" --> Server
+    Cfg -- "llm-providers" --> Server
+    Engine --> SF["Stockfish"]
+    Open --> TSV[("openings.tsv")]
+    LLMS --> LLM["Provedor LLM"]
+</script>
+
+<script type="text/plain" id="d-telas">
+stateDiagram-v2
+    [*] --> home
+    home --> color_selection: Novo jogo
+    home --> pgn_loader: Carregar PGN
+    pgn_loader --> home: Voltar
+    pgn_loader --> color_selection: PGN válido
+    color_selection --> home: Cancelar
+    color_selection --> game_training: cor escolhida (sem PGN)
+    color_selection --> game_review: cor escolhida (com PGN)
+    game_training --> color_selection: Novo jogo
+    game_review --> color_selection: Novo jogo
+    state "game (mode=training)" as game_training
+    state "game (mode=review)" as game_review
+</script>
+
+<script type="text/plain" id="d-lance">
+sequenceDiagram
+    autonumber
+    actor U as Jogador
+    participant GB as GameBoard
+    participant API as FastAPI
+    participant ES as engine_service
+    participant SF as Stockfish
+    U->>GB: arrasta peça (onDrop)
+    GB->>GB: chess.js valida e aplica lance
+    par Resposta do motor
+        GB->>API: POST /engine-move {fen, training:true}
+        API->>ES: get_engine_move
+        ES->>SF: analyse(MultiPV=3, depth=20)
+        SF-->>ES: 3 candidatos
+        alt lance ≤ 12 e melhor > 70% Win%
+            ES->>ES: choose_lenient_move
+        else
+            ES->>ES: choose_varied_move
+        end
+        API-->>GB: {engine_move, grace_applied}
+        GB-->>U: tabuleiro atualizado
+        GB-)API: POST /engine-analysis (lance do motor, 2º plano)
+    and Classificação em segundo plano
+        GB->>API: POST /engine-analysis {fen antes, move}
+        API->>ES: get_move_analysis
+        ES->>SF: analyse(antes)
+        ES->>SF: analyse(depois)
+        ES->>ES: cp → Win% → delta → classificação
+        API-->>GB: MoveAnalysis (badge oculto)
+    end
+</script>
+
+<script type="text/plain" id="d-relatorio">
+sequenceDiagram
+    autonumber
+    participant GB as GameBoard
+    participant API as FastAPI
+    participant RS as report_service
+    participant OS as openings_service
+    participant LS as llm_service
+    participant LLM as Provedor LLM
+    GB->>GB: finishGame + aguarda análises pendentes
+    GB->>API: reanalisa lances que falharam
+    Note over GB,OS: Etapa 1 — estatísticas
+    GB->>API: POST /game-stats {moves, pgn}
+    API->>RS: compute_game_stats
+    API->>OS: identify_opening
+    API-->>GB: {stats}
+    GB->>GB: mostra estatísticas e badges
+    Note over GB,LLM: Etapa 2 — narrativa
+    GB->>API: POST /game-report {stats, result, lenient_plies, BYOK}
+    API->>LS: generate_game_report
+    LS->>RS: generate_report_prompt
+    alt provider = prompt
+        LS-->>API: prompt formatado
+    else provedor LLM
+        LS->>LLM: chat.completions
+        LLM-->>LS: Markdown
+    end
+    alt sucesso
+        API-->>GB: {report}
+    else erro
+        API-->>GB: HTTP 400 / 502 {detail}
+    end
+</script>
+
+<script type="text/plain" id="d-pgn">
+sequenceDiagram
+    autonumber
+    actor U as Jogador
+    participant LP as LoadPGNPage
+    participant App
+    participant GB as GameBoard (review)
+    participant API as FastAPI
+    U->>LP: cola texto ou envia arquivo
+    LP->>LP: chess.js valida
+    LP->>App: onPGNLoaded
+    U->>App: escolhe o lado jogado
+    App->>GB: histórico reconstruído, mode=review
+    loop lances do usuário (2 workers)
+        GB->>API: POST /engine-analysis
+        API-->>GB: MoveAnalysis
+        GB-->>U: progresso X de Y
+    end
+    GB-)API: lances do oponente
+    GB->>API: POST /game-stats
+    API-->>GB: {stats}
+    GB->>API: POST /game-report {stats, imported:true}
+    API-->>GB: {report}
+</script>
+
+<script type="text/plain" id="d-explicacao">
+sequenceDiagram
+    autonumber
+    actor U as Jogador
+    participant GB as GameBoard
+    participant API as FastAPI
+    participant LS as llm_service
+    participant LLM as Provedor LLM
+    U->>GB: seleciona lance no histórico
+    U->>GB: Avaliar lance selecionado
+    GB->>API: POST /move-evaluation {move_analysis, mover, BYOK}
+    API->>LS: generate_move_evaluation
+    LS->>LS: generate_prompt (varia por mover)
+    LS->>LLM: chat.completions
+    LLM-->>LS: explicação
+    API-->>GB: {evaluation}
+    GB-->>U: Markdown no painel
+</script>
+
+<script type="text/plain" id="d-motor">
+flowchart TD
+    A["POST /engine-move"] --> B{"training?"}
+    B -- não --> P["engine.play depth 20"]
+    B -- sim --> C["analyse MultiPV=3, depth 20"]
+    C --> D{"lance ≤ 12?"}
+    D -- não --> V
+    D -- sim --> E{"Win% do melhor > 70?"}
+    E -- não --> V
+    E -- sim --> F["candidatos com Win% ≥ 50"]
+    F --> G{"algum ≤ 70?"}
+    G -- sim --> H["joga o mais forte ≤ 70<br/>grace_applied"]
+    G -- não --> I["joga o mais fraco dos sólidos<br/>grace_applied"]
+    V{"melhor é mate a favor?"} -- sim --> M["joga o mate"]
+    V -- não --> W["sorteia entre candidatos a até<br/>3,0 p.p. (lance ≤ 10) ou 1,5 p.p."]
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>
+  (function () {
+    var forced = document.documentElement.getAttribute('data-theme');
+    var dark = forced ? forced === 'dark'
+      : window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    mermaid.initialize({ startOnLoad: false, theme: dark ? 'dark' : 'neutral', securityLevel: 'loose' });
+
+    var targets = document.querySelectorAll('.diagram[data-src]');
+    targets.forEach(function (el, i) {
+      var src = document.getElementById(el.getAttribute('data-src'));
+      if (!src) return;
+      mermaid.render('mmd-' + i, src.textContent.trim())
+        .then(function (out) { el.innerHTML = out.svg; })
+        .catch(function (err) {
+          el.innerHTML = '<pre style="text-align:left;white-space:pre-wrap"></pre>';
+          el.firstChild.textContent = 'Erro ao renderizar diagrama: ' + err;
+        });
+    });
+  })();
+</script>
+</body>
+</html>

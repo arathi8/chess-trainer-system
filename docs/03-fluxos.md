@@ -234,6 +234,30 @@ sequenceDiagram
     end
 ```
 
+Depois da teoria (Sim no modal ou "Jogar a partir daqui" no fim da linha), a partida continua contra o Stockfish:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as Jogador
+    participant RT as RepertoireTrainer
+    participant API as FastAPI
+
+    opt vez do motor
+        RT->>API: POST /engine-move {fen, training:true}
+        API-->>RT: lance do Stockfish
+    end
+    loop até fim de jogo ou "Encerrar partida"
+        U->>RT: lance
+        RT-)API: POST /engine-analysis (2º plano)
+        RT->>API: POST /engine-move
+        API-->>RT: resposta
+    end
+    RT->>RT: aguarda análises pendentes
+    RT->>API: POST /game-stats {lances do usuário fora da teoria, pgn}
+    API-->>RT: precisão + contagens
+```
+
 ## 3.8 Decisão do lance do motor
 
 ```mermaid

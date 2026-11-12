@@ -2,6 +2,12 @@
 
 Cada entrada registra uma sincronização desta pasta com o código. A mais recente fica no topo.
 
+## 2026-11-11 — sincronizado até `7bcd979` (branch `feat/learn-repertoire`)
+
+| Commit | Mudança no código | Documentos atualizados |
+|---|---|---|
+| `7bcd979` feat: play on against Stockfish when the repertoire line ends | Partida real contra o Stockfish depois da teoria (Fase 5 adiantada): respostas via `/engine-move`, análise dos lances fora da teoria, precisão via `/game-stats`, opções de continuação abaixo do tabuleiro | README, 01 (F15), 02 (componentes), 03 (3.7, sequência do playout), 07 (Fase 5), HTML |
+
 ## 2026-11-11 — sincronizado até `c86cf8e` (branch `feat/learn-repertoire`)
 
 | Commit | Mudança no código | Documentos atualizados |

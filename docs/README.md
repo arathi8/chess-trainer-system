@@ -5,12 +5,12 @@ Documentação técnica do estado atual do projeto, extraída diretamente da lei
 | Sincronização | |
 |---|---|
 | Branch | `feat/learn-repertoire` (criada a partir da `develop`, que já contém a `feat/training-game`) |
-| Último commit coberto | `c86cf8e` — *feat: drill repertoire lines with a confirmation before leaving theory* |
+| Último commit coberto | `7bcd979` — *feat: play on against Stockfish when the repertoire line ends* |
 | Data | 2026-11-11 |
 | Alterações não commitadas consideradas | nenhuma |
-| Trabalho em andamento | Modo **Aprender repertório** — Fases 1 a 3 de 6 concluídas; ver [07-modo-repertorio.md](07-modo-repertorio.md) |
+| Trabalho em andamento | Modo **Aprender repertório** — Fases 1, 2, 3 e 5 de 6 concluídas (a 5 foi adiantada); falta a 4 (LLM); ver [07-modo-repertorio.md](07-modo-repertorio.md) |
 
-Para saber o que mudou no código desde esta documentação: `git log --oneline c86cf8e..HEAD` e `git diff c86cf8e HEAD --stat`.
+Para saber o que mudou no código desde esta documentação: `git log --oneline 7bcd979..HEAD` e `git diff 7bcd979 HEAD --stat`.
 
 ## Princípio central
 
@@ -59,5 +59,5 @@ Pontos de entrada:
 
 - **Novo jogo** → partida de treino contra o Stockfish, todos os lances analisados durante o jogo mas com feedback oculto até o fim → estatísticas imediatas + narrativa do treinador.
 - **Carregar PGN** → importação de partida → análise automática de todos os lances → relatório.
-- **Aprender repertório** *(em desenvolvimento)* → escolher abertura/defesa do catálogo Lichess → drill das linhas teóricas → partida contra o Stockfish a partir da posição. Hoje funcionam a escolha da abertura e o drill (com confirmação ao sair da teoria e resumo); faltam a LLM e a partida contra o Stockfish.
+- **Aprender repertório** *(em desenvolvimento)* → escolher abertura/defesa do catálogo Lichess → drill das linhas teóricas → partida contra o Stockfish a partir da posição. Hoje funcionam a escolha da abertura, o drill (com confirmação ao sair da teoria), a partida contra o Stockfish depois da teoria e o resumo; falta a LLM.
 - **CLI** (`backend/chess_trainer_system_cli.py`) → avaliação de um lance (FEN + UCI) via API, interativa ou por arquivos.

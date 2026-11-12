@@ -180,7 +180,9 @@ Indexar `openings.tsv` leva ~5 s. Desde `5ceeb35`, o servidor faz isso em uma *t
 
 Novo modo de jogo para estudar uma abertura ou defesa do catálogo Lichess: drill das linhas teóricas no tabuleiro e, ao fim da linha (ou se o jogador confirmar que quer sair da teoria), partida contra o Stockfish a partir da posição. Plano completo e status por fase em [07-modo-repertorio.md](07-modo-repertorio.md).
 
-Já implementado (Fase 1, commit `a719b4c`), em [repertoire_service.py](../backend/services/repertoire_service.py):
+Já funciona no navegador: escolha da abertura e da cor, drill das linhas com dica e seta, confirmação ao sair da teoria (com a avaliação do Stockfish), partida contra o Stockfish depois da teoria com a precisão dos lances fora dela, e resumo da sessão. Falta a LLM (apresentação da abertura e "por que esse lance?").
+
+Backend (Fase 1, commit `a719b4c`), em [repertoire_service.py](../backend/services/repertoire_service.py):
 
 - **Catálogo** (`GET /api/repertoire/catalog`): 150 famílias e 1.306 variantes, agrupadas pelo nome do dataset (`Família: Variante, Subvariante`). Cada item traz ECO, linha de referência, número de linhas e a **cor sugerida**: o lado que joga o lance que define a família (Siciliana → pretas, Ruy Lopez → brancas); variantes herdam a cor da família.
 - **Árvore de teoria** (`GET /api/repertoire/tree?name=...`): todas as linhas da abertura (incluindo subvariantes) fundidas numa árvore de lances a partir da posição inicial. Cada nó tem SAN, UCI, FEN, ply, popularidade (quantas linhas do dataset passam pela posição) e o nome da linha que termina ali; filhos ordenados do mais popular ao menos popular; nó sem filhos = fim da linha. Ex.: Najdorf = 33 linhas, 86 nós, 16 KB; Siciliana inteira = 400 linhas, 900 nós, 174 KB.

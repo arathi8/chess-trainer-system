@@ -160,7 +160,7 @@ export default function GameBoard({
     isReview ? describeImportedResult(initialGame?.getHeaders().Result) : ''
   )
   const [importProgress, setImportProgress] = useState<{ done: number; total: number } | null>(null)
-  // Opponent moves are classified after the game, for the history badges and the per-move coach.
+  // Opponent moves still unclassified after the game (imported games, or failed analyses in training).
   const [opponentAnalysing, setOpponentAnalysing] = useState(false)
   const [report, setReport] = useState<GameReportData | null>(null)
   const [reportLoading, setReportLoading] = useState(false)
@@ -169,8 +169,6 @@ export default function GameBoard({
 
   const gameRef = useRef<Chess>(game)
   gameRef.current = game
-
-  const lastMoveRef = useRef<{ fenBefore: string; moveUci: string } | null>(null)
 
   // Refs, not state: the report is assembled after async work, where state would be stale.
   const finishedRef = useRef(isReview)
@@ -185,12 +183,7 @@ export default function GameBoard({
   // Plies are 0-based half-moves: even = White's moves.
   const isUserPly = (ply: number) => (ply % 2 === 0) === (userColor === 'white')
 
-  const recordMove = (san: string, fen: string): { turnNumber: number; isWhite: boolean } => {
-    const lastRow = moveHistory[moveHistory.length - 1]
-    const isNewTurn = !lastRow || Boolean(lastRow.white && lastRow.black)
-    const turnNumber = isNewTurn ? moveHistory.length + 1 : lastRow.turnNumber
-    const isWhite = isNewTurn
-
+  const recordMove = (san: string, fen: string) => {
     setMoveHistory(prev => {
       const nextHistory = [...prev]
       const row = nextHistory[nextHistory.length - 1]
@@ -203,8 +196,6 @@ export default function GameBoard({
 
       return nextHistory
     })
-
-    return { turnNumber, isWhite }
   }
 
   const attachEngineAnalysis = (
@@ -237,29 +228,26 @@ export default function GameBoard({
     )
   }
 
-  const requestEngineAnalysis = async (
-    fen: string,
-    move: string,
-    san: string,
-    turnNumber: number,
-    isWhite: boolean
-  ) => {
-    try {
+  // Classifies one move (either side's); the history badges stay hidden until the game ends.
+  const requestEngineAnalysis = async (move: Move) => {
+    const ply = plyFromFen(move.before)
+    const turnNumber = Math.floor(ply / 2) + 1
+    const isWhite = move.color === 'w'
 
+    try {
       const response = await fetch(`${API_BASE_URL}/engine-analysis`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fen: fen, move: move })
+        body: JSON.stringify({ fen: move.before, move: `${move.from}${move.to}${move.promotion ?? ''}` })
       })
 
       if (!response.ok) throw new Error(`HTTP error: ${response.status}`)
 
       const data = await response.json()
 
-      const ply = plyFromFen(fen)
       analysisByPlyRef.current.set(ply, {
         ply,
-        san,
+        san: move.san,
         move_classification: data.move_classification,
         move_delta: data.move_delta,
         before_move_analysis: data.before_move_analysis,
@@ -275,11 +263,18 @@ export default function GameBoard({
         data.after_move_analysis
       )
 
-      setSemanticAnalysisReady(true)
+      if (isUserPly(ply)) setSemanticAnalysisReady(true)
 
     } catch (err) {
       console.error('Classification error:', err)
     }
+  }
+
+  // Training game: each move is analysed while the game goes on, so the report only waits for the last ones.
+  const analyseInBackground = (move: Move) => {
+    const analysis = requestEngineAnalysis(move)
+    pendingAnalysesRef.current.add(analysis)
+    analysis.finally(() => pendingAnalysesRef.current.delete(analysis))
   }
 
   const requestEngineMove = async (currentFen: string) => {
@@ -316,6 +311,7 @@ export default function GameBoard({
         if (move) {
           setGame(gameCopy)
           recordMove(move.san, gameCopy.fen())
+          analyseInBackground(move)
         }
       }
 
@@ -356,9 +352,6 @@ export default function GameBoard({
       return false
     }
 
-    const fenBefore = game.fen()
-    const isWhite = game.turn() === 'w'
-
     try {
       const gameCopy = cloneGame(game)
 
@@ -376,27 +369,8 @@ export default function GameBoard({
           'Aguarde a classificação técnica do lance antes de solicitar o feedback do treinador.'
         )
 
-      const { turnNumber } = recordMove(
-        move.san,
-        gameCopy.fen()
-      )
-
-      const moveUci = `${sourceSquare}${targetSquare}${move.promotion || ''}`
-
-      const analysisPromise = requestEngineAnalysis(
-        fenBefore,
-        moveUci,
-        move.san,
-        turnNumber,
-        isWhite
-      )
-      pendingAnalysesRef.current.add(analysisPromise)
-      analysisPromise.finally(() => pendingAnalysesRef.current.delete(analysisPromise))
-
-      lastMoveRef.current = {
-        fenBefore,
-        moveUci
-      }
+      recordMove(move.san, gameCopy.fen())
+      analyseInBackground(move)
 
       if (!gameCopy.isGameOver()) {
         requestEngineMove(gameCopy.fen())
@@ -532,15 +506,15 @@ export default function GameBoard({
   }
 
   // Classifies every move of one side that has no analysis yet, a few at a time.
+  // Imported games are analysed this way; training games only use it to retry failed analyses.
   const analyseMoves = async (
     targetGame: Chess,
     side: 'user' | 'opponent',
     onProgress?: (done: number, total: number) => void
   ) => {
-    const queue: { move: Move; turnNumber: number }[] = targetGame
+    const queue: Move[] = targetGame
       .history({ verbose: true })
-      .map((m, i) => ({ move: m, turnNumber: Math.floor(i / 2) + 1 }))
-      .filter(({ move }) => {
+      .filter(move => {
         const ply = plyFromFen(move.before)
         return isUserPly(ply) === (side === 'user') && !analysisByPlyRef.current.has(ply)
       })
@@ -550,15 +524,8 @@ export default function GameBoard({
     onProgress?.(done, total)
 
     const worker = async () => {
-      for (let item = queue.shift(); item; item = queue.shift()) {
-        const { move, turnNumber } = item
-        await requestEngineAnalysis(
-          move.before,
-          `${move.from}${move.to}${move.promotion ?? ''}`,
-          move.san,
-          turnNumber,
-          move.color === 'w'
-        )
+      for (let move = queue.shift(); move; move = queue.shift()) {
+        await requestEngineAnalysis(move)
         done += 1
         onProgress?.(done, total)
       }
@@ -586,8 +553,9 @@ export default function GameBoard({
     setIsEngineThinking(false)
     setReportLoading(true)
 
-    // The last moves' analyses may still be running.
+    // Moves were analysed during the game: wait for the last ones, then retry any that failed.
     await Promise.allSettled([...pendingAnalysesRef.current])
+    await analyseMoves(finalGame, 'user')
 
     analyseOpponentMoves(finalGame)
     await submitReport(finalGame, result, termination, false)

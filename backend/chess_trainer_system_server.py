@@ -1,3 +1,5 @@
+import threading
+from contextlib import asynccontextmanager
 from typing import Any, Literal, Optional
 
 import uvicorn
@@ -15,10 +17,18 @@ from services.llm_service import (
     generate_move_evaluation,
     get_provider_options,
 )
-from services.openings_service import identify_opening
+from services.openings_service import identify_opening, load_openings
 from services.report_service import compute_game_stats
 
-app = FastAPI(title="Chess Trainer System API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Indexing the openings dataset takes seconds: do it in the background so the server starts
+    # at once and the first game report does not pay for it.
+    threading.Thread(target=load_openings, name="openings-preload", daemon=True).start()
+    yield
+
+
+app = FastAPI(title="Chess Trainer System API", lifespan=lifespan)
 
 # Enable CORS for Vite / React development server
 app.add_middleware(

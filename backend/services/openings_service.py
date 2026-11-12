@@ -2,8 +2,8 @@
 
 import csv
 import io
+import threading
 from collections import Counter
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -21,8 +21,23 @@ def position_key(board: chess.Board) -> str:
     return board.epd()
 
 
-@lru_cache(maxsize=1)
+_openings: Optional[Tuple[Named, Counter]] = None
+_openings_lock = threading.Lock()
+
+
 def load_openings() -> Tuple[Named, Counter]:
+    """
+    Indexes the dataset once and caches it. Indexing takes a few seconds, so the server preloads it
+    at startup; a caller arriving mid-build waits for it instead of building a second copy.
+    """
+    global _openings
+    with _openings_lock:
+        if _openings is None:
+            _openings = build_openings_index()
+        return _openings
+
+
+def build_openings_index() -> Tuple[Named, Counter]:
     """
     Returns (named, book):
     - named: final position of each dataset line -> (eco, name, pgn of the line)

@@ -1,18 +1,14 @@
 import { ROOT, lineFrom, mainline, moveNumberLabel, variationsAt } from '../moveTree'
 import type { MoveNode, MoveTree } from '../moveTree'
 
-const BADGE_CONFIG: Record<string, { label: string; className: string }> = {
-  'Best Move': { label: '!', className: 'great' },
-  'Good Move': { label: '★', className: 'best' },
-  'Inaccuracy': { label: '?!', className: 'inaccuracy' },
-  'Mistake': { label: '?', className: 'mistake' },
-  'Blunder': { label: '??', className: 'blunder' }
-}
-
-function MoveBadge({ classification }: { classification?: string }) {
-  if (!classification || !BADGE_CONFIG[classification]) return null
-  const { label, className } = BADGE_CONFIG[classification]
-  return <span className={`tag ${className}`} title={classification}>{label}</span>
+// Once classified, a move's text takes the colour of its classification, followed by the usual
+// annotation glyph ("Nd4?!"), so the class also reads without the colour.
+const CLASSIFICATIONS: Record<string, { glyph: string; className: string }> = {
+  'Best Move': { glyph: '!', className: 'move-best' },
+  'Good Move': { glyph: '', className: 'move-good' },
+  'Inaccuracy': { glyph: '?!', className: 'move-inaccuracy' },
+  'Mistake': { glyph: '?', className: 'move-mistake' },
+  'Blunder': { glyph: '??', className: 'move-blunder' }
 }
 
 type HistoryItem =
@@ -53,12 +49,18 @@ interface MoveListProps {
 }
 
 export default function MoveList({ tree, cursorId, showBadges, onSelect }: MoveListProps) {
-  const isSelected = (move: MoveNode) => (move.id === cursorId ? 'selected-move' : undefined)
-  const badge = (move: MoveNode) => showBadges && <MoveBadge classification={move.analysis?.classification} />
+  // Classifications stay hidden while a training game is running.
+  const classification = (move: MoveNode) =>
+    showBadges && move.analysis ? CLASSIFICATIONS[move.analysis.classification] : undefined
+
+  const moveClass = (move: MoveNode) =>
+    [classification(move)?.className, move.id === cursorId && 'selected-move'].filter(Boolean).join(' ') || undefined
+
+  const moveTitle = (move: MoveNode) => (classification(move) ? move.analysis?.classification : undefined)
 
   const rowCell = (move: MoveNode | undefined, filler: boolean) => (
-    <button className={move && isSelected(move)} onClick={() => move && onSelect(move.id)}>
-      {move ? <><b>{move.san}</b>{badge(move)}</> : filler && <span className="ellipsis">…</span>}
+    <button className={move && moveClass(move)} title={move && moveTitle(move)} onClick={() => move && onSelect(move.id)}>
+      {move ? <b>{move.san}{classification(move)?.glyph}</b> : filler && <span className="ellipsis">…</span>}
     </button>
   )
 
@@ -72,8 +74,8 @@ export default function MoveList({ tree, cursorId, showBadges, onSelect }: MoveL
       numbered = nested.length > 0
       return (
         <span key={move.id} className="variation-move">
-          <button className={isSelected(move)} onClick={() => onSelect(move.id)}>
-            {label}{move.san}{badge(move)}
+          <button className={moveClass(move)} title={moveTitle(move)} onClick={() => onSelect(move.id)}>
+            {label}{move.san}{classification(move)?.glyph}
           </button>
           {nested.map(sub => (
             <span key={sub.id} className="variation-nested">({variationLine(sub)})</span>

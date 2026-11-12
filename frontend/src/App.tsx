@@ -148,6 +148,8 @@ function App() {
           // A new selection starts a fresh session.
           key={`${repertoire.opening.name}|${repertoire.color}`}
           selection={repertoire}
+          llmConfig={llmConfig}
+          onLLMConfigChange={handleLLMConfigChange}
           onChangeOpening={handleLearnRepertoire}
           onBackHome={handleBackHome}
         />

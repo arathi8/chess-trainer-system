@@ -8,18 +8,27 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 # Import services
-from services.engine_service import get_move_analysis, get_engine_move
+from services.engine_service import get_move_analysis, get_engine_move, get_position_analysis
 from services.llm_service import (
     DEFAULT_PROVIDER,
     LLMError,
     LLMNotConfiguredError,
     generate_game_report,
     generate_move_evaluation,
+    generate_opening_intro,
+    generate_theory_move_explanation,
     get_provider_options,
 )
 from services.openings_service import identify_opening, load_openings
 from services.report_service import compute_game_stats
-from services.repertoire_service import UnknownOpeningError, build_repertoire_tree, list_repertoire_catalog
+from services.repertoire_service import (
+    NotInTheoryError,
+    UnknownOpeningError,
+    build_repertoire_tree,
+    list_repertoire_catalog,
+    opening_overview,
+    theory_move_context,
+)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -156,6 +165,26 @@ class RepertoireTreeResponse(BaseModel):
     lines: int
     tree: RepertoireNode
 
+class RepertoireIntroRequest(BaseModel):
+    # Opening name as listed by /api/repertoire/catalog
+    name: str
+    color: Literal["white", "black"]
+    # BYOK settings, as in MoveEvaluationRequest
+    provider: str = DEFAULT_PROVIDER
+    api_key: Optional[str] = None
+    model: Optional[str] = None
+    base_url: Optional[str] = None
+
+class RepertoireIntroResponse(BaseModel):
+    intro: str
+
+class RepertoireExplainMoveRequest(RepertoireIntroRequest):
+    # UCI moves from the starting position up to and including the move to explain
+    moves: list[str]
+
+class RepertoireExplainMoveResponse(BaseModel):
+    explanation: str
+
 # --- API Endpoints ---
 
 @app.post("/api/engine-move", response_model=EngineMoveResponse)
@@ -277,6 +306,66 @@ def repertoire_tree(name: str):
         return build_repertoire_tree(name)
     except UnknownOpeningError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+def raise_llm_http_error(e: Exception):
+    """Same HTTP errors as /api/move-evaluation and /api/game-report."""
+    if isinstance(e, LLMNotConfiguredError):
+        raise HTTPException(status_code=400, detail=str(e))
+    if isinstance(e, LLMError):
+        raise HTTPException(status_code=502, detail=f"LLM provider error: {e}")
+    raise HTTPException(status_code=500, detail=f"LLM configuration error: {e}")
+
+
+@app.post("/api/repertoire/intro", response_model=RepertoireIntroResponse)
+def repertoire_intro(payload: RepertoireIntroRequest):
+    """The coach presents the opening, grounded on its theory and Stockfish's view of the reference line."""
+    try:
+        overview = opening_overview(payload.name)
+    except UnknownOpeningError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    analysis = get_position_analysis(overview["reference_fen"])  # None if Stockfish fails: the prompt says so
+    try:
+        intro = generate_opening_intro(
+            overview,
+            payload.color,
+            analysis,
+            provider=payload.provider,
+            api_key=payload.api_key,
+            model=payload.model,
+            base_url=payload.base_url,
+        )
+    except (LLMError, ValueError) as e:
+        raise_llm_http_error(e)
+    return RepertoireIntroResponse(intro=intro)
+
+
+@app.post("/api/repertoire/explain-move", response_model=RepertoireExplainMoveResponse)
+def repertoire_explain_move(payload: RepertoireExplainMoveRequest):
+    """Why theory plays a move of the line, grounded on the theory tree and Stockfish's analysis of the move."""
+    try:
+        context = theory_move_context(payload.name, payload.moves)
+    except UnknownOpeningError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except NotInTheoryError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    analysis = get_move_analysis(context["fen_before"], context["move_uci"])
+    try:
+        explanation = generate_theory_move_explanation(
+            payload.name,
+            payload.color,
+            context,
+            analysis,
+            provider=payload.provider,
+            api_key=payload.api_key,
+            model=payload.model,
+            base_url=payload.base_url,
+        )
+    except (LLMError, ValueError) as e:
+        raise_llm_http_error(e)
+    return RepertoireExplainMoveResponse(explanation=explanation)
 
 
 if __name__ == "__main__":

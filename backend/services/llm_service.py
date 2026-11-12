@@ -2,7 +2,7 @@ from typing import Dict, Any, List, Optional
 
 from openai import OpenAI, APIError as OpenAIAPIError
 
-from services.report_service import generate_report_prompt
+from services.report_service import format_san_line, generate_report_prompt
 
 SYSTEM_PROMPT = "You are a chess expert assistant. Respond using Markdown formatting."
 TIMEOUT = 60.0
@@ -226,4 +226,117 @@ def generate_game_report(
         lenient_plies=lenient_plies,
         imported=imported,
     )
+    return complete_prompt(prompt, provider, api_key, model, base_url)
+
+
+# --- repertoire training (prompts in Portuguese: the user interface is in Portuguese) ---
+
+COLOR_PT = {"white": "brancas", "black": "pretas"}
+
+REPERTOIRE_COACH = (
+    "Você é um treinador de xadrez ensinando repertório de aberturas a um aluno. "
+    "Responda em português do Brasil, em Markdown, com linguagem didática e direta. "
+    "Baseie-se apenas nos dados abaixo: não invente lances ou sequências fora das linhas fornecidas, "
+    "e cite nomes de variantes somente se aparecerem nos dados. A avaliação do Stockfish está do ponto de "
+    "vista das brancas (valores positivos favorecem as brancas)."
+)
+
+
+def generate_opening_intro_prompt(
+    overview: Dict[str, Any], color: str, position_analysis: Optional[Dict[str, Any]] = None
+) -> str:
+    """Prompt to present an opening before the drill, from repertoire_service.opening_overview."""
+    side = COLOR_PT.get(color, color)
+    lines = [
+        REPERTOIRE_COACH,
+        "",
+        f"O aluno vai treinar a abertura abaixo jogando com as {side}. Apresente-a antes do treino, em até "
+        "300 palavras, com exatamente estas seções:",
+        "1. **Ideia geral**: o que a abertura busca e por que é jogada.",
+        f"2. **Planos típicos para as {side}**: o que o aluno deve buscar depois da linha de referência.",
+        "3. **Estrutura de peões e casas-chave**.",
+        "4. **Cuidados e erros comuns** para o lado do aluno.",
+        "5. **Como treinar**: em que prestar atenção ao repetir as linhas.",
+        "",
+        "--- ABERTURA (base de aberturas do Lichess) ---",
+        f"Nome: {overview['eco']} {overview['name']}",
+        f"Linha de referência: {overview['reference_line']}",
+        f"Linhas teóricas no treino: {overview['lines']}",
+    ]
+    if overview["variations"]:
+        lines.append("Principais variantes (mais linhas teóricas primeiro):")
+        lines += [
+            f"- {v['name']} ({v['lines']} {'linha' if v['lines'] == 1 else 'linhas'}): {v['line']}"
+            for v in overview["variations"]
+        ]
+
+    if position_analysis:
+        lines.append(format_analysis_block({**position_analysis, "label": "POSIÇÃO AO FIM DA LINHA DE REFERÊNCIA"}))
+    else:
+        lines += ["", "Avaliação do Stockfish indisponível: não cite avaliações numéricas."]
+    return "\n".join(lines)
+
+
+def generate_theory_move_prompt(
+    opening_name: str, color: str, context: Dict[str, Any], move_analysis: Optional[Dict[str, Any]] = None
+) -> str:
+    """Prompt to explain why theory plays a move, from repertoire_service.theory_move_context."""
+    side = COLOR_PT.get(color, color)
+    by_user = context["mover"] == color
+    move_label = f"{format_san_line([context['move_san']], context['ply'])}"
+    lines = [
+        REPERTOIRE_COACH,
+        "",
+        f"O aluno treina {opening_name} com as {side} e quer entender o lance {move_label}, "
+        + ("jogado pelo aluno (lance da teoria do seu repertório)." if by_user
+           else "jogado pelo oponente (uma resposta teórica)."),
+        "Explique em até 150 palavras: a ideia do lance, o que ele prepara ou impede, e por que a teoria o "
+        "prefere nesta posição. "
+        + ("Se houver alternativas teóricas, compare brevemente."
+           if by_user else "Depois diga como o aluno deve responder, usando os lances teóricos indicados."),
+        "",
+        "--- CONTEXTO DA TEORIA ---",
+        f"Linha até o lance: {format_san_line(context['line_sans'])}",
+        f"Variante nesta altura: {context['opening']['name'] if context['opening'] else opening_name}",
+        f"Outros lances teóricos nesta posição: {', '.join(context['alternatives']) or 'nenhum'}",
+        f"Respostas teóricas depois do lance: {', '.join(context['next_theory']) or 'a teoria da base termina aqui'}",
+    ]
+    if move_analysis:
+        lines.append(format_analysis_block({**move_analysis["before_move_analysis"], "label": "ANTES DO LANCE"}))
+        lines.append(format_analysis_block({**move_analysis["after_move_analysis"], "label": "DEPOIS DO LANCE"}))
+        lines.append(
+            f"Classificação do lance pelo sistema: {move_analysis['move_classification']} "
+            f"(perda de {move_analysis['move_delta']}% de chance de vitória)"
+        )
+    else:
+        lines += ["", "Avaliação do Stockfish indisponível: não cite avaliações numéricas."]
+    return "\n".join(lines)
+
+
+def generate_opening_intro(
+    overview: Dict[str, Any],
+    color: str,
+    position_analysis: Optional[Dict[str, Any]] = None,
+    provider: str = DEFAULT_PROVIDER,
+    api_key: Optional[str] = None,
+    model: Optional[str] = None,
+    base_url: Optional[str] = None,
+) -> str:
+    """The coach's presentation of an opening. With the prompt-only provider, returns the prompt."""
+    prompt = generate_opening_intro_prompt(overview, color, position_analysis)
+    return complete_prompt(prompt, provider, api_key, model, base_url)
+
+
+def generate_theory_move_explanation(
+    opening_name: str,
+    color: str,
+    context: Dict[str, Any],
+    move_analysis: Optional[Dict[str, Any]] = None,
+    provider: str = DEFAULT_PROVIDER,
+    api_key: Optional[str] = None,
+    model: Optional[str] = None,
+    base_url: Optional[str] = None,
+) -> str:
+    """Why theory plays a move. With the prompt-only provider, returns the prompt."""
+    prompt = generate_theory_move_prompt(opening_name, color, context, move_analysis)
     return complete_prompt(prompt, provider, api_key, model, base_url)

@@ -251,6 +251,23 @@ def get_engine_move(fen: str, min_depth: int = 20, training: bool = False) -> Tu
         return result.move.uci(), False
 
 
+def get_position_analysis(fen: str, min_depth: int = 20) -> Optional[Dict[str, Any]]:
+    """Stockfish's evaluation of a single position, in the same format as get_move_analysis's halves."""
+    board = parse_board(fen)
+    if not board:
+        return None
+    try:
+        with chess.engine.SimpleEngine.popen_uci(find_stockfish()) as engine:
+            info = engine.analyse(board, chess.engine.Limit(depth=min_depth))
+            return stringfy_engine_analysis(board, info)
+    except FileNotFoundError:
+        print("Error: Stockfish engine binary not found.", file=sys.stderr)
+        return None
+    except Exception as err:
+        print(f"Engine execution failure on position analysis: {err}", file=sys.stderr)
+        return None
+
+
 def get_move_analysis(
     fen: str,
     move: str,

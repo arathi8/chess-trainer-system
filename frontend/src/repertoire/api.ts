@@ -1,5 +1,6 @@
 import { API_BASE_URL } from '../api'
 import type { GameStats } from '../components/GameReport'
+import type { LLMConfig } from '../llmConfig'
 
 export type Color = 'white' | 'black'
 
@@ -80,6 +81,21 @@ export interface AnalysedMove extends MoveAnalysis {
   ply: number
   san: string
 }
+
+// --- LLM coach (BYOK settings travel with each request, as in the rest of the app) ---
+
+export const fetchOpeningIntro = (name: string, color: Color, llm: LLMConfig | null): Promise<string> =>
+  requestJson<{ intro: string }>('/repertoire/intro', { name, color, ...llm }).then(data => data.intro)
+
+// `moves`: UCI moves from the starting position up to and including the move to explain.
+export const fetchTheoryExplanation = (
+  name: string,
+  color: Color,
+  moves: string[],
+  llm: LLMConfig | null
+): Promise<string> =>
+  requestJson<{ explanation: string }>('/repertoire/explain-move', { name, color, moves, ...llm })
+    .then(data => data.explanation)
 
 export const fetchGameStats = (payload: {
   user_color: Color

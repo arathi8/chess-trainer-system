@@ -4,9 +4,19 @@ import { Chess } from 'chess.js'
 import type { Move, Square } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 import type { Arrow } from 'react-chessboard'
+import ReactMarkdown from 'react-markdown'
 import Modal from './Modal'
+import LLMSettings from './LLMSettings'
 import type { GameStats } from './GameReport'
-import { fetchEngineMove, fetchGameStats, fetchMoveAnalysis, fetchRepertoireTree } from '../repertoire/api'
+import type { LLMConfig } from '../llmConfig'
+import {
+  fetchEngineMove,
+  fetchGameStats,
+  fetchMoveAnalysis,
+  fetchOpeningIntro,
+  fetchRepertoireTree,
+  fetchTheoryExplanation
+} from '../repertoire/api'
 import type { AnalysedMove, MoveAnalysis, RepertoireNode, RepertoireTree } from '../repertoire/api'
 import {
   classifyUserMove,
@@ -22,7 +32,14 @@ import {
 import { cloneGame, moveNumberLabel, moveToUci, plyFromFen } from '../chess/utils'
 import type { RepertoireSelection } from './RepertoirePicker'
 
-type Phase = 'drill' | 'line-complete' | 'playout' | 'summary'
+type Phase = 'intro' | 'drill' | 'line-complete' | 'playout' | 'summary'
+
+// A coach (LLM) answer: the opening presentation or a "why this move?" explanation.
+type CoachText =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'done'; text: string }
+  | { status: 'error'; message: string }
 
 // Delay before the opponent's theoretical reply, so the user sees their own move land first.
 const OPPONENT_DELAY_MS = 450
@@ -105,18 +122,43 @@ function describeResult(game: Chess, color: 'white' | 'black', stopped: boolean)
   return stopped ? 'Partida encerrada por você' : 'Partida encerrada'
 }
 
+// Position at the end of a PGN line (the opening's reference line), shown during the presentation.
+function fenAfter(pgn: string): string {
+  const game = new Chess()
+  try {
+    game.loadPgn(pgn)
+  } catch {
+    // Dataset lines are validated by the backend; keep the starting position otherwise.
+  }
+  return game.fen()
+}
+
 interface RepertoireTrainerProps {
   selection: RepertoireSelection
+  llmConfig: LLMConfig | null
+  onLLMConfigChange: (config: LLMConfig | null) => void
   onChangeOpening: () => void
   onBackHome: () => void
 }
 
-export default function RepertoireTrainer({ selection, onChangeOpening, onBackHome }: RepertoireTrainerProps) {
+export default function RepertoireTrainer({
+  selection,
+  llmConfig,
+  onLLMConfigChange,
+  onChangeOpening,
+  onBackHome
+}: RepertoireTrainerProps) {
   const { opening, color } = selection
   const [tree, setTree] = useState<RepertoireTree | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
 
-  const [phase, setPhase] = useState<Phase>('drill')
+  const [phase, setPhase] = useState<Phase>('intro')
+  const [intro, setIntro] = useState<CoachText>({ status: 'idle' })
+  // Index (0-based ply) of the theory move selected in the move list, for "why this move?".
+  const [selectedPly, setSelectedPly] = useState<number | null>(null)
+  // Explanations already asked in this session, keyed by the UCI path of the move.
+  const [explanations, setExplanations] = useState<Record<string, CoachText>>({})
+  const [llmSettingsOpen, setLlmSettingsOpen] = useState(false)
   const [game, setGame] = useState(() => new Chess())
   const [path, setPath] = useState<RepertoireNode[]>([])
   // Wrong answers (or hints asked) at the current position: 1 highlights the piece, 2+ draws the arrow.
@@ -145,17 +187,56 @@ export default function RepertoireTrainer({ selection, onChangeOpening, onBackHo
     gameRef.current = game
   }, [game])
 
+  // Coach (LLM) presentation of the opening. Asked automatically when the screen opens with a LLM
+  // configured, or right after one is configured in the settings dialog.
+  const requestIntro = (config: LLMConfig | null = llmConfig) => {
+    setIntro({ status: 'loading' })
+    fetchOpeningIntro(opening.name, color, config)
+      .then(text => setIntro({ status: 'done', text }))
+      .catch(err => setIntro({ status: 'error', message: err instanceof Error ? err.message : String(err) }))
+  }
+
+  // Runs once per screen (App remounts it for another opening or colour). The `active` flag drops the
+  // answer of the effect StrictMode discards in development, so the LLM presentation is asked only once.
   useEffect(() => {
+    let active = true
     fetchRepertoireTree(opening.name)
       .then(data => {
+        if (!active) return
         setTree(data)
         setPath([data.tree])
+        if (llmConfig) requestIntro()
       })
       .catch(err => {
+        if (!active) return
         console.error('Repertoire tree error:', err)
         setLoadError(err instanceof Error ? err.message : 'Não foi possível carregar a teoria desta abertura.')
       })
+    return () => {
+      active = false
+    }
+    // Mount-only on purpose: later LLM setting changes go through the settings dialog's onSave.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opening.name])
+
+  // --- coach (LLM): "why this move?" ---
+
+  const theoryUcis = ucisOf(path)
+  const selectedUcis = selectedPly !== null && selectedPly < theoryUcis.length ? theoryUcis.slice(0, selectedPly + 1) : null
+  const selectedKey = selectedUcis ? pathKey(selectedUcis) : null
+  const explanation: CoachText = (selectedKey && explanations[selectedKey]) || { status: 'idle' }
+
+  const requestExplanation = () => {
+    if (!selectedUcis || !selectedKey) return
+    const keyAsked = selectedKey
+    setExplanations(prev => ({ ...prev, [keyAsked]: { status: 'loading' } }))
+    fetchTheoryExplanation(opening.name, color, selectedUcis, llmConfig)
+      .then(text => setExplanations(prev => ({ ...prev, [keyAsked]: { status: 'done', text } })))
+      .catch(err => setExplanations(prev => ({
+        ...prev,
+        [keyAsked]: { status: 'error', message: err instanceof Error ? err.message : String(err) }
+      })))
+  }
 
   const node = path[path.length - 1] as RepertoireNode | undefined
   const key = pathKey(ucisOf(path))
@@ -176,6 +257,7 @@ export default function RepertoireTrainer({ selection, onChangeOpening, onBackHo
     setPendingEval(null)
     setDeviation(null)
     setPlayout(null)
+    setSelectedPly(null)
     setPhase('drill')
   }
 
@@ -430,17 +512,84 @@ export default function RepertoireTrainer({ selection, onChangeOpening, onBackHo
 
   // Move list of the current game, two plies per row; moves after theory are highlighted.
   const theoryPlies = playout?.theoryPlies ?? null
-  const rows: { number: number; white?: { san: string; offBook: boolean }; black?: { san: string; offBook: boolean } }[] = []
-  shownGame.history().forEach((san, i) => {
-    const entry = { san, offBook: theoryPlies !== null ? i >= theoryPlies : pending !== null && i === shownGame.history().length - 1 }
-    if (i % 2 === 0) rows.push({ number: i / 2 + 1, white: entry })
+  // Theory moves (those of the current path) can be selected to ask "why this move?".
+  type MoveEntry = { san: string; ply: number; offBook: boolean; theory: boolean }
+  const rows: { number: number; white?: MoveEntry; black?: MoveEntry }[] = []
+  const shownHistory = shownGame.history()
+  shownHistory.forEach((san, ply) => {
+    const entry = {
+      san,
+      ply,
+      offBook: theoryPlies !== null ? ply >= theoryPlies : pending !== null && ply === shownHistory.length - 1,
+      theory: ply < theoryUcis.length
+    }
+    if (ply % 2 === 0) rows.push({ number: ply / 2 + 1, white: entry })
     else rows[rows.length - 1].black = entry
   })
+
+  const moveButton = (entry?: MoveEntry) => {
+    if (!entry) return <button disabled />
+    const classes = [entry.offBook && 'offbook-move', selectedPly === entry.ply && 'selected-move'].filter(Boolean).join(' ')
+    return (
+      <button
+        disabled={!entry.theory}
+        className={classes || undefined}
+        onClick={() => setSelectedPly(entry.ply)}
+        title={entry.theory ? 'Perguntar ao treinador por que este lance é jogado' : undefined}
+      >
+        <b>{entry.san}</b>
+      </button>
+    )
+  }
+
+  const selectedSan = selectedPly !== null && selectedPly < shownHistory.length ? shownHistory[selectedPly] : null
+  const selectedIsUsers = selectedPly !== null && (selectedPly % 2 === 0) === (color === 'white')
+
+  const coachError = (message: string, onRetry: () => void) => (
+    <div className="report-error">
+      <p>⚠️ {message}</p>
+      <div>
+        <button className="outline-btn" onClick={() => setLlmSettingsOpen(true)}>Configurar LLM</button>
+        <button className="outline-btn" onClick={onRetry}>Tentar de novo</button>
+      </div>
+    </div>
+  )
+
+  const whyPanel = tree && phase !== 'intro' && (
+    <div className="move-coach">
+      <span className="eyebrow small">POR QUE ESSE LANCE?</span>
+      {selectedSan === null ? (
+        <p className="move-coach-target">
+          Clique em um lance da teoria na lista à esquerda para o treinador explicar por que ele é jogado.
+        </p>
+      ) : (
+        <>
+          <p className="move-coach-target">
+            Lance selecionado: <b>{moveNumberLabel(selectedPly as number)} {selectedSan}</b> ({selectedIsUsers ? 'seu' : 'do oponente'})
+          </p>
+          {explanation.status !== 'done' && (
+            <button
+              className="outline-btn move-coach-btn"
+              onClick={requestExplanation}
+              disabled={explanation.status === 'loading'}
+            >
+              {explanation.status === 'loading' ? 'O treinador está pensando...' : 'Por que esse lance?'}
+            </button>
+          )}
+          {explanation.status === 'error' && coachError(explanation.message, requestExplanation)}
+          {explanation.status === 'done' && (
+            <div className="message markdown-body"><ReactMarkdown>{explanation.text}</ReactMarkdown></div>
+          )}
+        </>
+      )}
+    </div>
+  )
 
   const errorsList = Object.values(stats.errors).sort((a, b) => b.count - a.count).slice(0, MAX_LISTED_ERRORS)
   const firstTryRate = stats.userMoves > 0 ? Math.round((stats.firstTry / stats.userMoves) * 100) : null
 
   const stageTitle = {
+    intro: 'Apresentação da abertura',
     drill: userTurn ? 'Sua vez: jogue o lance da teoria' : 'O oponente responde...',
     'line-complete': 'Fim da teoria: escolha como continuar',
     playout: playout?.finished
@@ -508,9 +657,10 @@ export default function RepertoireTrainer({ selection, onChangeOpening, onBackHo
           <span>chess<span className="gold">trainer</span></span>
         </button>
         <div className="top-actions">
-          {phase !== 'summary' && tree && (
+          {phase !== 'summary' && phase !== 'intro' && tree && (
             <button className="outline-btn" onClick={() => setPhase('summary')}>Encerrar treino</button>
           )}
+          <button className="outline-btn" onClick={() => setLlmSettingsOpen(true)}>Configurar LLM</button>
           <button className="outline-btn" onClick={onChangeOpening}>Trocar abertura</button>
         </div>
       </header>
@@ -527,12 +677,8 @@ export default function RepertoireTrainer({ selection, onChangeOpening, onBackHo
             {rows.map(row => (
               <div className="move-row" key={row.number}>
                 <span className="move-number">{String(row.number).padStart(2, '0')}</span>
-                <button disabled className={row.white?.offBook ? 'offbook-move' : undefined}>
-                  <b>{row.white?.san}</b>
-                </button>
-                <button disabled className={row.black?.offBook ? 'offbook-move' : undefined}>
-                  {row.black && <b>{row.black.san}</b>}
-                </button>
+                {moveButton(row.white)}
+                {moveButton(row.black)}
               </div>
             ))}
           </div>
@@ -552,7 +698,7 @@ export default function RepertoireTrainer({ selection, onChangeOpening, onBackHo
             <div className="chessboard-container">
               <Chessboard
                 options={{
-                  position: shownGame.fen(),
+                  position: phase === 'intro' && tree ? fenAfter(tree.reference_line) : shownGame.fen(),
                   boardOrientation: color,
                   allowDragging: canDrag,
                   squareStyles,
@@ -591,6 +737,42 @@ export default function RepertoireTrainer({ selection, onChangeOpening, onBackHo
           </div>
 
           <div className="chat-content">
+            {phase === 'intro' && (
+              <div className="repertoire-coach">
+                <span className="eyebrow small">{opening.eco} · LINHA DE REFERÊNCIA NO TABULEIRO</span>
+                {!llmConfig && intro.status === 'idle' && (
+                  <>
+                    <p className="message">
+                      Configure uma LLM para o treinador apresentar a abertura: ideias, planos típicos e cuidados.
+                    </p>
+                    <button className="outline-btn full" onClick={() => setLlmSettingsOpen(true)}>Configurar LLM</button>
+                  </>
+                )}
+                {llmConfig && intro.status === 'idle' && (
+                  <button className="outline-btn full" onClick={() => requestIntro()}>Apresentar a abertura</button>
+                )}
+                {intro.status === 'loading' && (
+                  <p className="message system">O treinador está preparando a apresentação...</p>
+                )}
+                {intro.status === 'error' && coachError(intro.message, () => requestIntro())}
+                {intro.status === 'done' && (
+                  <div className="message markdown-body"><ReactMarkdown>{intro.text}</ReactMarkdown></div>
+                )}
+                <div className="repertoire-actions">
+                  <button className="primary-action full" onClick={() => setPhase('drill')} disabled={!tree}>
+                    {intro.status === 'done' ? 'Começar o treino' : 'Pular e começar o treino'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {phase === 'drill' && intro.status === 'done' && (
+              <details className="repertoire-intro">
+                <summary>Apresentação da abertura</summary>
+                <div className="message markdown-body"><ReactMarkdown>{intro.text}</ReactMarkdown></div>
+              </details>
+            )}
+
             {phase === 'drill' && node && (
               <div className="repertoire-coach">
                 {userTurn ? (
@@ -677,9 +859,26 @@ export default function RepertoireTrainer({ selection, onChangeOpening, onBackHo
                 </div>
               </div>
             )}
+
+            {whyPanel}
           </div>
         </aside>
       </div>
+
+      {llmSettingsOpen && (
+        <LLMSettings
+          config={llmConfig}
+          onSave={config => {
+            onLLMConfigChange(config)
+            setLlmSettingsOpen(false)
+            // Still on the presentation without one: ask for it with the new settings.
+            if (phase === 'intro' && config && intro.status !== 'done' && intro.status !== 'loading') {
+              requestIntro(config)
+            }
+          }}
+          onCancel={() => setLlmSettingsOpen(false)}
+        />
+      )}
 
       {pending && node && (
         <Modal

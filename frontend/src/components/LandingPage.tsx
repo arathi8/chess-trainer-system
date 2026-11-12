@@ -53,8 +53,8 @@ export default function LandingPage({ onNewGame, onLoadPGN }: LandingPageProps) 
             />
           </div>
           <div className="board-caption">
-            <span><span className="live-dot" /> Análise ao vivo</span>
-            <span>Stockfish</span>
+            <span><span className="live-dot" /> Análise ao vivo </span>
+            <span>com Stockfish e LLM</span>
           </div>
         </div>
       </section>

@@ -2,6 +2,15 @@
 
 Cada entrada registra uma sincronização desta pasta com o código. A mais recente fica no topo.
 
+## 2026-11-11 — sincronizado até `49cd306` (branch `feat/learn-repertoire`)
+
+| Commit | Mudança no código | Documentos atualizados |
+|---|---|---|
+| `36f0327` chore: name the browser tab and mention the LLM on the landing page | Título da aba e legenda da tela inicial (alterações locais que estavam pendentes) | README (nenhuma alteração pendente) |
+| `49cd306` feat: add the learn-repertoire entry point and opening picker | Botão "Aprender repertório", `RepertoirePicker`, `RepertoireTrainer` (por enquanto só carrega a árvore), cliente tipado `repertoire/api.ts`, telas novas no `App` | 02 (componentes, telas), 03 (navegação), 07 (Fase 2 concluída), README, HTML |
+
+Também: 05 (A5) registra que o provedor Ollama foi removido de propósito e está planejado para depois.
+
 ## 2026-11-11 — sincronizado até `a719b4c` (branch `feat/learn-repertoire`)
 
 | Commit | Mudança no código | Documentos atualizados |

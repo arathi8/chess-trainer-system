@@ -87,7 +87,7 @@ flowchart LR
 
 | Componente | Responsabilidade |
 |---|---|
-| [App.tsx](../frontend/src/App.tsx) | Máquina de telas (`home`, `pgn-loader`, `color-selection`, `game`); guarda cor, partida inicial, modo (`training`/`review`) e `llmConfig`; reconstrói o histórico de um PGN |
+| [App.tsx](../frontend/src/App.tsx) | Máquina de telas (`home`, `pgn-loader`, `color-selection`, `game`, `repertoire-picker`, `repertoire`); guarda cor, partida inicial, modo (`training`/`review`), seleção de repertório e `llmConfig`; reconstrói o histórico de um PGN |
 | [LandingPage.tsx](../frontend/src/components/LandingPage.tsx) | Tela inicial com os dois pontos de entrada |
 | [LoadPGNPage.tsx](../frontend/src/components/LoadPGNPage.tsx) | Entrada de PGN (texto ou arquivo) e validação com `chess.js` |
 | [ColorSelector.tsx](../frontend/src/components/ColorSelector.tsx) | Escolha de lado, texto adaptado ao fluxo |
@@ -97,6 +97,9 @@ flowchart LR
 | [Modal.tsx](../frontend/src/components/Modal.tsx) | Moldura de modal reutilizável |
 | [llmConfig.ts](../frontend/src/llmConfig.ts) | Tipos de configuração, busca do catálogo, persistência em `sessionStorage` |
 | [api.ts](../frontend/src/api.ts) | Apenas a constante `API_BASE_URL` |
+| [RepertoirePicker.tsx](../frontend/src/components/RepertoirePicker.tsx) | Modo repertório: catálogo pesquisável (família → variante), prévia da linha de referência e escolha de cor |
+| [RepertoireTrainer.tsx](../frontend/src/components/RepertoireTrainer.tsx) | Modo repertório: tela de treino. Hoje só carrega a árvore de teoria; o drill entra na Fase 3 ([07-modo-repertorio.md](07-modo-repertorio.md)) |
+| [repertoire/api.ts](../frontend/src/repertoire/api.ts) | Cliente tipado dos endpoints de repertório, com tipos espelhando os DTOs do backend. É o primeiro módulo de API tipado do frontend |
 | [HomePage.tsx](../frontend/src/components/HomePage.tsx) | Não é importado em lugar nenhum (código morto, versão antiga da tela inicial) |
 
 ### Backend

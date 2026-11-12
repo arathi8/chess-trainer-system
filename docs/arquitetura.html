@@ -91,7 +91,7 @@
 <header>
   <span class="eyebrow">MC857A · Documentação técnica</span>
   <h1>Chess Trainer System — Arquitetura</h1>
-  <p class="lead">Visão visual do estado atual do projeto (branch <code>feat/learn-repertoire</code>, sincronizada com o commit <code>a719b4c</code> em 2026-11-11). O texto completo está nos arquivos Markdown desta pasta; esta página reúne os diagramas renderizados.</p>
+  <p class="lead">Visão visual do estado atual do projeto (branch <code>feat/learn-repertoire</code>, sincronizada com o commit <code>49cd306</code> em 2026-11-11). O texto completo está nos arquivos Markdown desta pasta; esta página reúne os diagramas renderizados.</p>
   <nav>
     <a href="#principio">Princípio</a>
     <a href="#contexto">Contexto</a>
@@ -325,6 +325,9 @@ stateDiagram-v2
     color_selection --> game_review: cor escolhida (com PGN)
     game_training --> color_selection: Novo jogo
     game_review --> color_selection: Novo jogo
+    home --> repertoire_picker: Aprender repertório
+    repertoire_picker --> repertoire: Começar treino
+    repertoire --> repertoire_picker: Trocar abertura
     state "game (mode=training)" as game_training
     state "game (mode=review)" as game_review
 </script>

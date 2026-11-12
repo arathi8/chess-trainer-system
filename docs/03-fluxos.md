@@ -16,6 +16,11 @@ stateDiagram-v2
     game_review --> color_selection: Novo jogo
     game_training --> home: logo
     game_review --> home: logo
+    home --> repertoire_picker: Aprender repertório
+    repertoire_picker --> home: fechar
+    repertoire_picker --> repertoire: Começar treino (abertura + cor)
+    repertoire --> repertoire_picker: Trocar abertura
+    repertoire --> home: logo
 
     state "game (mode=training)" as game_training
     state "game (mode=review)" as game_review

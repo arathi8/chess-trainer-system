@@ -7,8 +7,8 @@ Plano aprovado e status da feature na branch `feat/learn-repertoire`. Atualize a
 | Fase | Escopo | Status | Commit |
 |---|---|---|---|
 | 1 | Backend: catálogo e árvore de teoria | ✅ concluída | `a719b4c` |
-| 2 | Frontend: botão na tela inicial, escolha do repertório, cliente de API tipado | ⏳ próxima | — |
-| 3 | Drill no frontend (inclui confirmação ao sair da teoria) | pendente | — |
+| 2 | Frontend: botão na tela inicial, escolha do repertório, cliente de API tipado | ✅ concluída | `49cd306` |
+| 3 | Drill no frontend (inclui confirmação ao sair da teoria) | ⏳ próxima | — |
 | 4 | LLM: apresentação da abertura e "por que esse lance?" | pendente | — |
 | 5 | Partida contra o Stockfish a partir da posição (playout) | pendente | — |
 | 6 | Documentação final | pendente | — |
@@ -50,18 +50,21 @@ Ver [01-features.md F15](01-features.md) e a tabela da API em [02-arquitetura.md
 
 Diferenças em relação ao plano original: a lógica ficou num módulo próprio (`repertoire_service`) em vez de dentro do `openings_service`; a árvore é `GET /api/repertoire/tree?name=` sem `color` (a cor não muda a árvore, e o frontend decide o lado).
 
-### Fase 2 — Frontend: entrada e escolha
+### Fase 2 — Frontend: entrada e escolha ✅
 
 - `LandingPage.tsx`: terceiro botão **Aprender repertório**.
-- `App.tsx`: telas `repertoire-picker` e `repertoire` na máquina de estados `screen`.
-- `RepertoirePicker.tsx` (novo): busca por nome/ECO, famílias → variantes (com nº de linhas), escolha de cor com a sugestão marcada, prévia da posição final da linha de referência.
-- `frontend/src/api/repertoire.ts` (novo): cliente tipado, uma função por endpoint (só para o código novo; débito C2).
+- `App.tsx`: telas `repertoire-picker` e `repertoire` na máquina de estados `screen`; estado `repertoire: RepertoireSelection` (`opening` + `color`). O `RepertoireTrainer` recebe `key` = nome + cor, então trocar a seleção reinicia a sessão.
+- `RepertoirePicker.tsx`: busca por nome ou ECO, sem diferenciar acentos (`Grunfeld` acha `Grünfeld`). Famílias se expandem em variantes; durante a busca, as variantes que casam aparecem já abertas. Mostra a prévia do tabuleiro no fim da linha de referência, orientado pela cor, e a escolha de cor com a sugestão marcada. Estilos `.repertoire-*` em `index.css`, com layout de uma coluna abaixo de 780 px.
+- `frontend/src/repertoire/api.ts`: cliente tipado (`fetchRepertoireCatalog`, `fetchRepertoireTree`) com tipos espelhando os DTOs do backend; propaga o `detail` dos erros HTTP.
+- `RepertoireTrainer.tsx`: **por enquanto só carrega a árvore** e mostra o tabuleiro inicial e um resumo (linhas e lances). A Fase 3 constrói o drill nesta tela.
+
+Diferença em relação ao plano original: o cliente de API ficou em `frontend/src/repertoire/api.ts` (pasta da feature, junto do futuro `drill.ts`), e não em `frontend/src/api/repertoire.ts`, para não criar uma pasta `api/` ao lado do arquivo `api.ts`.
 
 ### Fase 3 — Drill
 
 - **Não** adicionar um terceiro modo ao `GameBoard.tsx` (débito C1).
 - `frontend/src/repertoire/drill.ts` (novo, funções puras): `expectedMoves(node)` (qualquer filho teórico é acerto; o mais popular é a linha principal), `classifyUserMove(node, uci) → 'theory' | 'off-book'`, `pickOpponentMove(node, visited, rng)` (sorteio ponderado por popularidade, preferindo ramos não vistos), `isLineEnd(node)`, `nextUnvisitedLine(tree, visited)`.
-- `RepertoireTrainer.tsx` (novo): estados `intro → drill → line-complete → playout → summary`; modal de confirmação ao sair da teoria (reaproveita `Modal`); dica com `squareStyles` e depois seta com `arrows` do `react-chessboard`; opcionalmente mostra no modal a avaliação do Stockfish do lance jogado vs. o teórico (`/api/engine-analysis`); painel com o nome da variante atual e a lista de lances; resumo determinístico (linhas concluídas, acertos de primeira, lances com mais erros, ponto de saída da teoria).
+- `RepertoireTrainer.tsx` (já existe, hoje só carrega a árvore): estados `intro → drill → line-complete → playout → summary`; modal de confirmação ao sair da teoria (reaproveita `Modal`); dica com `squareStyles` e depois seta com `arrows` do `react-chessboard`; opcionalmente mostra no modal a avaliação do Stockfish do lance jogado vs. o teórico (`/api/engine-analysis`); painel com o nome da variante atual e a lista de lances; resumo determinístico (linhas concluídas, acertos de primeira, lances com mais erros, ponto de saída da teoria).
 - Mover `cloneGame` e `plyFromFen` de `GameBoard.tsx` para `frontend/src/chess/utils.ts`.
 
 ### Fase 4 — LLM

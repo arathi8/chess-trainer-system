@@ -34,7 +34,7 @@ Pontos encontrados durante a análise que valem considerar antes das próximas a
 | A2 | `requirements.txt` não inclui `pytest` (nem há `requirements-dev.txt`) |
 | A3 | A pasta `diagramas/` (não versionada) tem diagramas desatualizados: citam `/api/engine-feedback`, que não existe, e o `diagram_5_semantic_explain.png` é uma cópia do diagrama 4. Os diagramas desta pasta `docs/` os substituem |
 | A4 | Existem arquivos não versionados na raiz: `package-lock.json` (o frontend usa Yarn) e `input/` (FENs, lances e PGNs de exemplo, diferente de `backend/inputs/` que a CLI lê) |
-| A5 | Uma entrada de provedor Ollama chegou a existir como alteração local em `PROVIDER_DEFAULTS`, mas não foi commitada e não está mais no código: hoje só há Gemini e "Somente prompt" |
+| A5 | Provedor Ollama (LLM local) **planejado para depois**: foi testado localmente, não funcionou e foi removido de propósito. Hoje só há Gemini e "Somente prompt". Ao retomar, partir de uma entrada em `PROVIDER_DEFAULTS` (`base_url` `http://localhost:11434/v1/`) e investigar por que a primeira tentativa falhou |
 | A7 | O catálogo de repertório (`/api/repertoire/catalog`) tem ~220 KB, porque traz a linha de referência de todas as 1.306 variantes. Se pesar no carregamento da tela, dá para enviar só nomes e buscar detalhes sob demanda |
 | A6 | URLs fixas: `API_BASE_URL = http://localhost:8000/api` no frontend e CORS só para `localhost:5173`. Não há variáveis de ambiente (`VITE_API_URL`) |
 

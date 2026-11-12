@@ -5,10 +5,13 @@ import type { Square } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 import LLMSettings from './LLMSettings'
 import GameReport from './GameReport'
+import MoveList from './MoveList'
 import type { CoachReport, GameStats } from './GameReport'
 import { API_BASE_URL } from '../api'
 import type { LLMConfig } from '../llmConfig'
 import ReactMarkdown from 'react-markdown'
+import { ROOT, addMove, fenAt, lineEnd, mainline, moveNumberLabel, plyFromFen, setAnalysis, treeFromGame } from '../moveTree'
+import type { MoveAnalysis, MoveNode, MoveTree } from '../moveTree'
 
 type PlayerColor = 'white' | 'black'
 // training: play Stockfish with feedback hidden until the end; review: analyse an imported PGN
@@ -17,38 +20,8 @@ export type GameMode = 'training' | 'review'
 // Engine analyses running at once when analysing an imported game.
 const IMPORT_ANALYSIS_CONCURRENCY = 2
 
-interface MoveDetail {
-  san: string
-  fen: string
-  classification?: string
-  delta?: number
-  beforeAnalysis?: PositionAnalysis
-  afterAnalysis?: PositionAnalysis
-}
-
-interface MoveRow {
-  turnNumber: number
-  white: MoveDetail
-  black?: MoveDetail
-}
-
-const BADGE_CONFIG: Record<string, { label: string; className: string }> = {
-  'Best Move': { label: '!', className: 'great' },
-  'Good Move': { label: '★', className: 'best' },
-  'Inaccuracy': { label: '?!', className: 'inaccuracy' },
-  'Mistake': { label: '?', className: 'mistake' },
-  'Blunder': { label: '??', className: 'blunder' }
-}
-
-const MoveBadge = ({ classification }: { classification?: string }) => {
-  if (!classification || !BADGE_CONFIG[classification]) return null
-  const { label, className } = BADGE_CONFIG[classification]
-  return <span className={`tag ${className}`} title={classification}>{label}</span>
-}
-
 interface GameBoardProps {
   initialGame?: Chess
-  initialHistory?: MoveRow[]
   userColor: PlayerColor
   mode?: GameMode
   llmConfig: LLMConfig | null
@@ -57,23 +30,22 @@ interface GameBoardProps {
   onBackHome: () => void
 }
 
-interface PositionAnalysis {
-  fen: string;
-  best_move: string;
-  evaluation: string;
-  depth: number;
-  line: string;
+type AnalysedNode = MoveNode & { analysis: MoveAnalysis }
+
+const isAnalysed = (node: MoveNode): node is AnalysedNode => Boolean(node.analysis)
+
+// The engine analysis of a move, in the shape /api/move-evaluation and /api/game-stats expect.
+function toAnalysisPayload(node: AnalysedNode) {
+  return {
+    move_classification: node.analysis.classification,
+    move_delta: node.analysis.delta,
+    before_move_analysis: node.analysis.before,
+    after_move_analysis: node.analysis.after
+  }
 }
 
 // One analysed user move, in the shape /api/game-stats expects.
-interface MoveAnalysis {
-  ply: number
-  san: string
-  move_classification: string
-  move_delta: number
-  before_move_analysis: PositionAnalysis
-  after_move_analysis: PositionAnalysis
-}
+type ReportMove = { ply: number; san: string } & ReturnType<typeof toAnalysisPayload>
 
 // What /api/game-report needs besides the BYOK settings; kept to retry the coach's report.
 interface ReportContext {
@@ -83,12 +55,6 @@ interface ReportContext {
   pgn: string
   lenient_plies: number[]
   imported: boolean
-}
-
-// Half-move index of the side to move in a FEN: 0 = White's first move.
-const plyFromFen = (fen: string): number => {
-  const [, turn, , , , fullmove] = fen.split(' ')
-  return (Number(fullmove) - 1) * 2 + (turn === 'b' ? 1 : 0)
 }
 
 const MIN_MOVES_FOR_REPORT = 3
@@ -143,7 +109,6 @@ function detectTermination(game: Chess): string {
 
 export default function GameBoard({
   initialGame,
-  initialHistory = [],
   userColor,
   mode = 'training',
   llmConfig,
@@ -152,13 +117,7 @@ export default function GameBoard({
   onBackHome
 }: GameBoardProps) {
   const [game, setGame] = useState<Chess>(initialGame || new Chess())
-  const [moveHistory, setMoveHistory] = useState<MoveRow[]>(initialHistory)
-  const [analysis, setEvaluation] = useState<string>('')
-  const [loadingAnalysis, setLoadingAnalysis] = useState(false)
   const [isEngineThinking, setIsEngineThinking] = useState(false)
-  const [semanticAnalysisReady, setSemanticAnalysisReady] = useState(false)
-  const [reviewMode, setReviewMode] = useState(false)
-  const [reviewFen, setReviewFen] = useState<string | null>(null)
   const [llmSettingsOpen, setLlmSettingsOpen] = useState(false)
 
   const isReview = mode === 'review'
@@ -176,14 +135,27 @@ export default function GameBoard({
   const [statsLoading, setStatsLoading] = useState(false)
   const [coachReport, setCoachReport] = useState<CoachReport>({ text: null, error: null, loading: false })
   const [reportMessage, setReportMessage] = useState<string | null>(null)
-  const [selectedMove, setSelectedMove] = useState<{ turnNumber: number; isWhite: boolean } | null>(null)
+
+  // The game's moves, and the one shown on the board. The tree also lives in a ref: async work
+  // (analyses, the report) must read its latest state, not the one of the render that started it.
+  const [tree, setTree] = useState<MoveTree>(() => treeFromGame(initialGame ?? new Chess()))
+  const treeRef = useRef(tree)
+  const [cursorId, setCursorId] = useState(() => lineEnd(tree, ROOT))
+
+  // The coach's explanations, per move; explainingId is the move being explained.
+  const [explanations, setExplanations] = useState<Record<string, string>>({})
+  const [explainingId, setExplainingId] = useState<string | null>(null)
 
   const gameRef = useRef<Chess>(game)
   gameRef.current = game
 
+  const updateTree = (update: (current: MoveTree) => MoveTree) => {
+    treeRef.current = update(treeRef.current)
+    setTree(treeRef.current)
+  }
+
   // Refs, not state: the report is assembled after async work, where state would be stale.
   const finishedRef = useRef(isReview)
-  const analysisByPlyRef = useRef<Map<number, MoveAnalysis>>(new Map())
   const pendingAnalysesRef = useRef<Set<Promise<void>>>(new Set())
   const lenientPliesRef = useRef<number[]>([])
   const reportContextRef = useRef<ReportContext | null>(null)
@@ -194,96 +166,48 @@ export default function GameBoard({
   // Plies are 0-based half-moves: even = White's moves.
   const isUserPly = (ply: number) => (ply % 2 === 0) === (userColor === 'white')
 
-  const recordMove = (san: string, fen: string) => {
-    setMoveHistory(prev => {
-      const nextHistory = [...prev]
-      const row = nextHistory[nextHistory.length - 1]
-
-      if (!row || (row.white && row.black)) {
-        nextHistory.push({ turnNumber: nextHistory.length + 1, white: { san, fen } })
-      } else {
-        nextHistory[nextHistory.length - 1] = { ...row, black: { san, fen } }
-      }
-
-      return nextHistory
+  // Appends a move of the running game; the board follows it unless the user is looking at an earlier move.
+  const playMainlineMove = (move: Move): string => {
+    const tip = lineEnd(treeRef.current, ROOT)
+    let id = tip
+    updateTree(current => {
+      const added = addMove(current, tip, move)
+      id = added.id
+      return added.tree
     })
-  }
-
-  const attachEngineAnalysis = (
-    turnNumber: number,
-    isWhite: boolean,
-    moveClassification: string,
-    moveDelta: number,
-    beforeMoveAnalysis: PositionAnalysis,
-    afterMoveAnlysis: PositionAnalysis,
-  ) => {
-    setMoveHistory(prev =>
-      prev.map(row => {
-        if (row.turnNumber !== turnNumber) return row
-
-        const engineData = {
-          classification: moveClassification,
-          delta: moveDelta,
-          beforeAnalysis: beforeMoveAnalysis,
-          afterAnalysis: afterMoveAnlysis
-        }
-
-        if (isWhite) {
-          return { ...row, white: { ...row.white, ...engineData } }
-        } else if (row.black) {
-          return { ...row, black: { ...row.black, ...engineData } }
-        }
-
-        return row
-      })
-    )
+    setCursorId(cursor => (cursor === tip ? id : cursor))
+    return id
   }
 
   // Classifies one move (either side's); the history badges stay hidden until the game ends.
-  const requestEngineAnalysis = async (move: Move) => {
-    const ply = plyFromFen(move.before)
-    const turnNumber = Math.floor(ply / 2) + 1
-    const isWhite = move.color === 'w'
+  const requestEngineAnalysis = async (nodeId: string) => {
+    const node = treeRef.current.nodes[nodeId]
 
     try {
       const response = await fetch(`${API_BASE_URL}/engine-analysis`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fen: move.before, move: `${move.from}${move.to}${move.promotion ?? ''}` })
+        body: JSON.stringify({ fen: node.fenBefore, move: node.uci })
       })
 
       if (!response.ok) throw new Error(`HTTP error: ${response.status}`)
 
       const data = await response.json()
 
-      analysisByPlyRef.current.set(ply, {
-        ply,
-        san: move.san,
-        move_classification: data.move_classification,
-        move_delta: data.move_delta,
-        before_move_analysis: data.before_move_analysis,
-        after_move_analysis: data.after_move_analysis
-      })
-
-      attachEngineAnalysis(
-        turnNumber,
-        isWhite,
-        data.move_classification,
-        data.move_delta,
-        data.before_move_analysis,
-        data.after_move_analysis
-      )
-
-      if (isUserPly(ply)) setSemanticAnalysisReady(true)
-
+      updateTree(current => setAnalysis(current, nodeId, {
+        classification: data.move_classification,
+        delta: data.move_delta,
+        before: data.before_move_analysis,
+        after: data.after_move_analysis
+      }))
     } catch (err) {
       console.error('Classification error:', err)
     }
   }
 
   // Training game: each move is analysed while the game goes on, so the report only waits for the last ones.
-  const analyseInBackground = (move: Move) => {
-    const analysis = requestEngineAnalysis(move)
+  const analyseInBackground = (nodeId: string) => {
+    const analysis = requestEngineAnalysis(nodeId)
     pendingAnalysesRef.current.add(analysis)
     analysis.finally(() => pendingAnalysesRef.current.delete(analysis))
   }
@@ -321,8 +245,7 @@ export default function GameBoard({
 
         if (move) {
           setGame(gameCopy)
-          recordMove(move.san, gameCopy.fen())
-          analyseInBackground(move)
+          analyseInBackground(playMainlineMove(move))
         }
       }
 
@@ -355,7 +278,8 @@ export default function GameBoard({
   }, [])
 
   const onDrop = (sourceSquare: Square, targetSquare: Square): boolean => {
-    if (reviewMode || gameFinished) return false
+    // Moves are played from the current position only, not while looking at an earlier one.
+    if (gameFinished || cursorId !== lineEnd(tree, ROOT)) return false
 
     const currentTurn: PlayerColor = game.turn() === 'w' ? 'white' : 'black'
 
@@ -375,13 +299,7 @@ export default function GameBoard({
       if (!move) return false
 
       setGame(gameCopy)
-      setSemanticAnalysisReady(false)
-      setEvaluation(
-          'Aguarde a classificação técnica do lance antes de solicitar o feedback do treinador.'
-        )
-
-      recordMove(move.san, gameCopy.fen())
-      analyseInBackground(move)
+      analyseInBackground(playMainlineMove(move))
 
       if (!gameCopy.isGameOver()) {
         requestEngineMove(gameCopy.fen())
@@ -395,74 +313,39 @@ export default function GameBoard({
     }
   }
 
-  const requestMoveEvaluation = async (
-    targetTurnNumber?: number,
-    targetIsWhite?: boolean,
-    directPayload?: any
-  ) => {
-    let payload = directPayload
+  // The coach explains one analysed move (either side's), anchored on its engine analysis.
+  const explainMove = async (node: MoveNode) => {
+    if (!isAnalysed(node)) return
+    const explain = (text: string) => setExplanations(prev => ({ ...prev, [node.id]: text }))
 
-    if (!payload) {
-      const isWhiteMove = targetIsWhite ?? (userColor === 'white')
-
-      const row = targetTurnNumber !== undefined
-        ? moveHistory.find(r => r.turnNumber === targetTurnNumber)
-        : moveHistory.findLast(r => (isWhiteMove ? r.white : r.black))
-
-      if (!row) {
-        setEvaluation('Faça um lance para receber uma análise do seu movimento.')
-        return
-      }
-
-      const moveData = isWhiteMove ? row.white : row.black
-
-      if (!moveData || !moveData.beforeAnalysis || !moveData.afterAnalysis) {
-        setEvaluation(
-          'Aguarde a classificação técnica do lance antes de solicitar o feedback do treinador.'
-        )
-        return
-      }
-
-      payload = {
-        move_analysis: {
-          before_move_analysis: moveData.beforeAnalysis,
-          after_move_analysis: moveData.afterAnalysis,
-          move_classification: moveData.classification,
-          move_delta: moveData.delta
-        },
-        mover: isWhiteMove === (userColor === 'white') ? 'user' : 'opponent'
-      }
-    }
-
-    setLoadingAnalysis(true)
-
+    setExplainingId(node.id)
     try {
       const response = await fetch(`${API_BASE_URL}/move-evaluation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, ...llmConfig })
+        body: JSON.stringify({
+          move_analysis: toAnalysisPayload(node),
+          mover: isUserPly(node.ply) ? 'user' : 'opponent',
+          ...llmConfig
+        })
       })
-
       const data = await response.json().catch(() => null)
 
       if (!response.ok) {
-        setEvaluation(data?.detail ?? `Não foi possível obter a análise: erro HTTP ${response.status}`)
+        explain(data?.detail ?? `Não foi possível obter a análise: erro HTTP ${response.status}`)
         return
       }
-
-      setEvaluation(data?.evaluation || 'Avaliação semântica indisponível.')
-
+      explain(data?.evaluation || 'Avaliação semântica indisponível.')
     } catch (err) {
       console.error('Move evaluation error:', err)
-      setEvaluation('Não foi possível obter a análise no momento.')
-
+      explain('Não foi possível obter a análise no momento.')
     } finally {
-      setLoadingAnalysis(false)
+      setExplainingId(null)
     }
   }
 
   // Deterministic part of the report: fast, shown as soon as the game's analyses are in.
-  const requestGameStats = async (finalGame: Chess, moves: MoveAnalysis[]): Promise<GameStats | null> => {
+  const requestGameStats = async (finalGame: Chess, moves: ReportMove[]): Promise<GameStats | null> => {
     const userColorCode = userColor === 'white' ? 'w' : 'b'
     const totalUserMoves = finalGame.history({ verbose: true }).filter(m => m.color === userColorCode).length
 
@@ -513,9 +396,10 @@ export default function GameBoard({
   }
 
   const submitReport = async (finalGame: Chess, result: string, termination: string, imported: boolean) => {
-    const moves = [...analysisByPlyRef.current.values()]
-      .filter(m => isUserPly(m.ply))
-      .sort((a, b) => a.ply - b.ply)
+    const moves: ReportMove[] = mainline(treeRef.current)
+      .filter(node => isUserPly(node.ply))
+      .filter(isAnalysed)
+      .map(node => ({ ply: node.ply, san: node.san, ...toAnalysisPayload(node) }))
 
     if (moves.length < MIN_MOVES_FOR_REPORT) {
       setStatsLoading(false)
@@ -544,25 +428,18 @@ export default function GameBoard({
 
   // Classifies every move of one side that has no analysis yet, a few at a time.
   // Imported games are analysed this way; training games only use it to retry failed analyses.
-  const analyseMoves = async (
-    targetGame: Chess,
-    side: 'user' | 'opponent',
-    onProgress?: (done: number, total: number) => void
-  ) => {
-    const queue: Move[] = targetGame
-      .history({ verbose: true })
-      .filter(move => {
-        const ply = plyFromFen(move.before)
-        return isUserPly(ply) === (side === 'user') && !analysisByPlyRef.current.has(ply)
-      })
+  const analyseMoves = async (side: 'user' | 'opponent', onProgress?: (done: number, total: number) => void) => {
+    const queue = mainline(treeRef.current)
+      .filter(node => isUserPly(node.ply) === (side === 'user') && !node.analysis)
+      .map(node => node.id)
 
     const total = queue.length
     let done = 0
     onProgress?.(done, total)
 
     const worker = async () => {
-      for (let move = queue.shift(); move; move = queue.shift()) {
-        await requestEngineAnalysis(move)
+      for (let nodeId = queue.shift(); nodeId; nodeId = queue.shift()) {
+        await requestEngineAnalysis(nodeId)
         done += 1
         onProgress?.(done, total)
       }
@@ -570,10 +447,10 @@ export default function GameBoard({
     await Promise.all(Array.from({ length: IMPORT_ANALYSIS_CONCURRENCY }, worker))
   }
 
-  const analyseOpponentMoves = async (targetGame: Chess) => {
+  const analyseOpponentMoves = async () => {
     setOpponentAnalysing(true)
     try {
-      await analyseMoves(targetGame, 'opponent')
+      await analyseMoves('opponent')
     } finally {
       setOpponentAnalysing(false)
     }
@@ -593,9 +470,9 @@ export default function GameBoard({
     // Moves were analysed during the game: wait for the last ones, then retry any that failed.
     // The badges appear now, with the stats, while the coach's report is generated.
     await Promise.allSettled([...pendingAnalysesRef.current])
-    await analyseMoves(finalGame, 'user')
+    await analyseMoves('user')
 
-    analyseOpponentMoves(finalGame)
+    analyseOpponentMoves()
     await submitReport(finalGame, result, termination, false)
   }
 
@@ -605,10 +482,10 @@ export default function GameBoard({
     setReportMessage(null)
 
     // The user's moves first: the report needs them. The opponent's follow, while the report is generated.
-    await analyseMoves(importedGame, 'user', (done, total) => setImportProgress({ done, total }))
+    await analyseMoves('user', (done, total) => setImportProgress({ done, total }))
     setImportProgress(null)
 
-    analyseOpponentMoves(importedGame)
+    analyseOpponentMoves()
     const termination = importedGame.isGameOver() ? detectTermination(importedGame) : 'imported game'
     await submitReport(importedGame, importedGame.getHeaders().Result ?? '*', termination, true)
   }
@@ -633,39 +510,24 @@ export default function GameBoard({
     }
   }, [game])
 
-  const handleMoveClick = (fen: string, turnNumber?: number, isWhite?: boolean) => {
-    setReviewMode(true)
-    setReviewFen(fen)
-    const next = turnNumber !== undefined && isWhite !== undefined ? { turnNumber, isWhite } : null
-    if (next?.turnNumber !== selectedMove?.turnNumber || next?.isWhite !== selectedMove?.isWhite) {
-      setEvaluation('') // the previous explanation was about another move
-    }
-    setSelectedMove(next)
-  }
+  const tipId = lineEnd(tree, ROOT)
+  const viewingPast = cursorId !== tipId
 
-  const exitReviewMode = () => {
-    setReviewMode(false)
-    setReviewFen(null)
-    setSelectedMove(null)
-  }
-
-  // After the game, selecting a move in the history brings the per-move coach into view.
-  useEffect(() => {
-    if (selectedMove && gameFinished) {
+  // After the game, picking a move in the history brings the per-move coach into view.
+  const selectMove = (id: string) => {
+    setCursorId(id)
+    if (gameFinished && id !== ROOT) {
       moveCoachRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
-  }, [selectedMove, gameFinished])
+  }
 
-  // After the game, the coach explains the selected move (either side's), or the user's last move by default.
-  const selectedMoveData = selectedMove
-    ? moveHistory.find(r => r.turnNumber === selectedMove.turnNumber)?.[selectedMove.isWhite ? 'white' : 'black']
-    : undefined
-  const selectedMoveIsUsers = selectedMove ? selectedMove.isWhite === (userColor === 'white') : true
-  const canEvaluateSelected = selectedMove ? Boolean(selectedMoveData?.beforeAnalysis) : semanticAnalysisReady
-  const isSelected = (turnNumber: number, isWhite: boolean) =>
-    selectedMove?.turnNumber === turnNumber && selectedMove.isWhite === isWhite
+  // After the game, the coach explains the move on the board (either side's).
+  const selectedNode = cursorId !== ROOT ? tree.nodes[cursorId] : undefined
+  const selectedIsUsers = selectedNode ? isUserPly(selectedNode.ply) : false
+  const explanation = explanations[cursorId]
+  const explaining = explainingId !== null
 
-  const displayFen = reviewMode && reviewFen ? reviewFen : game.fen()
+  const displayFen = fenAt(tree, cursorId)
 
   return (
     <main className="game-shell">
@@ -699,55 +561,18 @@ export default function GameBoard({
             </div>
           </div>
 
-          <div className="moves">
-            <button
-              className="start-move"
-              onClick={() => {
-                handleMoveClick(new Chess().fen())
-              }}
-            >
-              JOGO INICIADO
-            </button>
-
-            {moveHistory.map(item => (
-              <div className="move-row" key={item.turnNumber}>
-                <span className="move-number">
-                  {String(item.turnNumber).padStart(2, '0')}
-                </span>
-
-                <button
-                  className={isSelected(item.turnNumber, true) ? 'selected-move' : undefined}
-                  onClick={() => handleMoveClick(item.white.fen, item.turnNumber, true)}
-                >
-                  <b>{item.white.san}</b>
-                  {gameFinished && <MoveBadge classification={item.white.classification} />}
-                </button>
-
-                <button
-                  className={isSelected(item.turnNumber, false) ? 'selected-move' : undefined}
-                  onClick={() => item.black && handleMoveClick(item.black.fen, item.turnNumber, false)}
-                >
-                  {item.black && (
-                    <>
-                      <b>{item.black.san}</b>
-                      {gameFinished && <MoveBadge classification={item.black.classification} />}
-                    </>
-                  )}
-                </button>
-              </div>
-            ))}
-          </div>
+          <MoveList tree={tree} cursorId={cursorId} showBadges={gameFinished} onSelect={selectMove} />
         </aside>
 
         <section className="center-stage">
           <div className="stage-head">
             <div>
               <span className="eyebrow small">
-                {reviewMode ? 'MODO DE REVISÃO' : gameFinished ? 'PARTIDA ENCERRADA' : 'PARTIDA DE TREINO'}
+                {viewingPast ? 'MODO DE REVISÃO' : gameFinished ? 'PARTIDA ENCERRADA' : 'PARTIDA DE TREINO'}
               </span>
 
               <h1>
-                {reviewMode
+                {viewingPast
                   ? 'Revendo posição'
                   : gameFinished
                     ? resultLabel
@@ -758,7 +583,7 @@ export default function GameBoard({
             </div>
           </div>
 
-          {reviewMode && (
+          {viewingPast && (
             <div style={{
               background: '#2d3327',
               padding: '12px',
@@ -775,7 +600,7 @@ export default function GameBoard({
               <button
                 className="outline-btn"
                 style={{ padding: '6px 12px', fontSize: '11px' }}
-                onClick={exitReviewMode}
+                onClick={() => setCursorId(tipId)}
               >
                 {gameFinished ? 'Posição final' : 'Voltar ao jogo'}
               </button>
@@ -832,7 +657,7 @@ export default function GameBoard({
             </div>
           </div>
 
-          {isEngineThinking && !reviewMode && (
+          {isEngineThinking && !viewingPast && (
             <p style={{
               textAlign: 'center',
               color: '#8b9487',
@@ -892,7 +717,10 @@ export default function GameBoard({
                 statsLoading={statsLoading}
                 coach={coachReport}
                 message={reportMessage}
-                onSelectMoment={(fen, ply) => handleMoveClick(fen, Math.floor(ply / 2) + 1, ply % 2 === 0)}
+                onSelectMoment={(_fen, ply) => {
+                  const node = mainline(tree).find(move => move.ply === ply)
+                  if (node) selectMove(node.id)
+                }}
                 onRetry={requestCoachReport}
                 onConfigureLLM={() => setLlmSettingsOpen(true)}
               />
@@ -903,45 +731,41 @@ export default function GameBoard({
                 <span className="eyebrow small">ANÁLISE POR LANCE</span>
 
                 <p className="move-coach-target">
-                  {selectedMove && selectedMoveData
+                  {selectedNode
                     ? <>
-                        Lance selecionado: <b>{selectedMove.turnNumber}{selectedMove.isWhite ? '.' : '...'} {selectedMoveData.san}</b>
-                        {' '}({selectedMoveIsUsers ? 'seu' : 'do oponente'})
+                        Lance selecionado: <b>{moveNumberLabel(selectedNode.ply)} {selectedNode.san}</b>
+                        {' '}({selectedIsUsers ? 'seu' : 'do oponente'})
                       </>
                     : 'Selecione um lance no histórico (seu ou do oponente) para pedir a explicação do treinador.'}
                 </p>
 
                 <button
                   className="outline-btn move-coach-btn"
-                  onClick={() => {
-                    requestMoveEvaluation(selectedMove?.turnNumber, selectedMove?.isWhite)
-                  }}
-                  disabled={loadingAnalysis || !canEvaluateSelected}
+                  onClick={() => selectedNode && explainMove(selectedNode)}
+                  disabled={explaining || !selectedNode?.analysis}
                 >
-                  {loadingAnalysis
+                  {explaining
                     ? 'Analisando...'
-                    : !canEvaluateSelected
-                      ? selectedMove
+                    : !selectedNode
+                      ? 'Selecione um lance'
+                      : !selectedNode.analysis
                         ? (opponentAnalysing ? 'Classificando lance...' : 'Lance sem classificação')
-                        : 'Selecione um lance'
-                      : selectedMove
-                        ? 'Avaliar lance selecionado'
-                        : 'Avaliar seu último lance'}
+                        : 'Avaliar lance selecionado'}
                 </button>
 
                 {opponentAnalysing && (
                   <p className="message system">Classificando os lances do oponente...</p>
                 )}
 
-                {loadingAnalysis && (
+                {explainingId === cursorId && (
                   <p className="message system" style={{ color: '#d0af68' }}>
                     🤔 Analisando o lance...
                   </p>
                 )}
 
-                {analysis && !loadingAnalysis && (
+                {explanation && explainingId !== cursorId && (
                   <div className="message markdown-body">
-                    <ReactMarkdown>{analysis}</ReactMarkdown>
+                    <ReactMarkdown>{explanation}</ReactMarkdown>
                   </div>
                 )}
               </div>

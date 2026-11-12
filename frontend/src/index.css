@@ -238,3 +238,6 @@ button {
   .game-shell{height:auto;overflow:visible}
   .chat-content{overflow:visible}
 }
+.board-controls{display:flex;justify-content:center;gap:6px;margin-top:12px}
+.board-controls .outline-btn{padding:8px 0;width:64px}
+.board-controls .outline-btn:disabled{opacity:.35;cursor:default}

@@ -139,3 +139,20 @@ export function mainline(tree: MoveTree): MoveNode[] {
 export function moveNumberLabel(ply: number): string {
   return `${Math.floor(ply / 2) + 1}${ply % 2 === 0 ? '.' : '...'}`
 }
+
+export type Navigation = 'first' | 'previous' | 'next' | 'last'
+
+// Where each navigation control leads from `id`. "last" ends the current line, so in a variation
+// it stays in the variation; on the mainline it is the latest move.
+export function navigate(tree: MoveTree, id: string, action: Navigation): string {
+  switch (action) {
+    case 'first':
+      return ROOT
+    case 'previous':
+      return parentOf(tree, id) ?? id
+    case 'next':
+      return firstChild(tree, id) ?? id
+    case 'last':
+      return lineEnd(tree, id)
+  }
+}

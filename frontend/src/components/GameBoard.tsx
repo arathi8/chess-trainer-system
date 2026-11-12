@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import type { Move } from 'chess.js'
 import { Chess } from 'chess.js'
 import type { Square } from 'chess.js'
@@ -6,12 +6,13 @@ import { Chessboard } from 'react-chessboard'
 import LLMSettings from './LLMSettings'
 import GameReport from './GameReport'
 import MoveList from './MoveList'
+import BoardControls from './BoardControls'
 import type { CoachReport, GameStats } from './GameReport'
 import { API_BASE_URL } from '../api'
 import type { LLMConfig } from '../llmConfig'
 import ReactMarkdown from 'react-markdown'
-import { ROOT, addMove, fenAt, lineEnd, mainline, moveNumberLabel, plyFromFen, setAnalysis, treeFromGame } from '../moveTree'
-import type { MoveAnalysis, MoveNode, MoveTree } from '../moveTree'
+import { ROOT, addMove, fenAt, lineEnd, mainline, moveNumberLabel, navigate, plyFromFen, setAnalysis, treeFromGame } from '../moveTree'
+import type { MoveAnalysis, MoveNode, MoveTree, Navigation } from '../moveTree'
 
 type PlayerColor = 'white' | 'black'
 // training: play Stockfish with feedback hidden until the end; review: analyse an imported PGN
@@ -513,6 +514,12 @@ export default function GameBoard({
   const tipId = lineEnd(tree, ROOT)
   const viewingPast = cursorId !== tipId
 
+  // Reads the tree from its ref: stable, so the keyboard listener is not re-attached on every move.
+  const onNavigate = useCallback(
+    (action: Navigation) => setCursorId(cursor => navigate(treeRef.current, cursor, action)),
+    []
+  )
+
   // After the game, picking a move in the history brings the per-move coach into view.
   const selectMove = (id: string) => {
     setCursorId(id)
@@ -583,30 +590,6 @@ export default function GameBoard({
             </div>
           </div>
 
-          {viewingPast && (
-            <div style={{
-              background: '#2d3327',
-              padding: '12px',
-              borderRadius: '6px',
-              marginBottom: '16px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center'
-            }}>
-              <span style={{ color: '#d0af68', fontSize: '12px' }}>
-                📋 Você está revisando um lance anterior
-              </span>
-
-              <button
-                className="outline-btn"
-                style={{ padding: '6px 12px', fontSize: '11px' }}
-                onClick={() => setCursorId(tipId)}
-              >
-                {gameFinished ? 'Posição final' : 'Voltar ao jogo'}
-              </button>
-            </div>
-          )}
-
           <div className="players">
             <div>
               <span className="player-piece">
@@ -656,6 +639,13 @@ export default function GameBoard({
               ))}
             </div>
           </div>
+
+          <BoardControls
+            canGoBack={cursorId !== ROOT}
+            canGoForward={cursorId !== lineEnd(tree, cursorId)}
+            keyboard={!llmSettingsOpen}
+            onNavigate={onNavigate}
+          />
 
           {isEngineThinking && !viewingPast && (
             <p style={{

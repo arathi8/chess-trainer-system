@@ -220,10 +220,43 @@ button {
 .settings-form input:focus,.settings-form select:focus{border-color:#ae8b4e}
 .settings-form input::placeholder{color:#697267}
 
+/* Learn repertoire: opening picker */
+.repertoire-layout{max-width:1180px;margin:0 auto;padding:24px 6vw 60px;display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:48px;align-items:start}
+.repertoire-catalog h1{font:400 40px Georgia,serif;margin:14px 0 10px;color:#f4f0e5}
+.repertoire-catalog>p{color:#929990;font-size:13px;line-height:1.6;margin:0 0 22px;max-width:520px}
+.repertoire-search{width:100%;background:#1a1e1a;border:1px solid #394139;border-radius:7px;color:#d7d7cc;padding:13px 14px;outline:0;font-size:13px;margin-bottom:14px}
+.repertoire-search:focus{border-color:#ae8b4e}
+.repertoire-search::placeholder{color:#697267}
+.repertoire-list,.repertoire-variations{list-style:none;margin:0;padding:0}
+.repertoire-list{max-height:calc(100vh - 330px);min-height:240px;overflow-y:auto;border:1px solid #2a2e2a;border-radius:7px;background:#161917}
+.repertoire-list>li{border-bottom:1px solid #222621}
+.repertoire-list>li:last-child{border-bottom:0}
+.repertoire-family{display:flex;align-items:stretch}
+.repertoire-item{flex:1;min-width:0;display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:10px;background:none;border:0;color:#c1c5bd;text-align:left;padding:11px 14px;font-size:12px}
+.repertoire-item:hover{background:#1e221e}
+.repertoire-item.selected{background:#2d3327;color:var(--gold-light);box-shadow:inset 3px 0 0 var(--gold)}
+.repertoire-item b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.repertoire-item small{color:#767e74;font-size:10px;white-space:nowrap}
+.repertoire-eco{font-size:10px;color:var(--gold);letter-spacing:.5px}
+.repertoire-toggle{background:none;border:0;border-left:1px solid #222621;color:#8b9487;font-size:11px;min-width:52px}
+.repertoire-toggle:hover{color:var(--gold-light)}
+.repertoire-variations{background:#131513;border-top:1px solid #222621}
+.repertoire-variations .repertoire-item{padding-left:30px}
+.repertoire-detail{position:sticky;top:20px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px;display:flex;flex-direction:column;gap:10px}
+.repertoire-preview{border:6px solid #28281f;box-shadow:0 14px 35px #0008;margin-bottom:8px}
+.repertoire-detail h2{font-size:18px;font-weight:500;margin:0;line-height:1.3}
+.repertoire-line{font-size:12px;color:#c1c5bd;line-height:1.6;margin:0;font-family:Consolas,Menlo,monospace}
+.repertoire-meta{font-size:11px;color:#8b9487;margin:0 0 6px}
+.repertoire-colors{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+.repertoire-colors button{background:#242924;color:#e5e4db;border:1px solid #3a4038;border-radius:7px;padding:11px 8px;font-size:13px;display:flex;flex-direction:column;align-items:center;gap:3px}
+.repertoire-colors button.active{border-color:var(--gold);background:#2d3327;color:var(--gold-light)}
+.repertoire-colors small{font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--gold)}
+
 @media(max-width:1050px){
   .game-layout{grid-template-columns:220px minmax(440px,1fr) 285px}
   .landing{padding:0 4vw}
   .hero{padding-left:0;padding-right:0}
+  .repertoire-layout{grid-template-columns:minmax(0,1fr) 320px;gap:28px}
 }
 
 @media(max-width:780px){
@@ -237,4 +270,8 @@ button {
   .chat-panel{order:3;border-left:0;border-top:1px solid #2a2e2a;min-height:460px;overflow:visible}
   .game-shell{height:auto;overflow:visible}
   .chat-content{overflow:visible}
+  .repertoire-layout{grid-template-columns:1fr;gap:28px;padding:16px 16px 48px}
+  .repertoire-catalog h1{font-size:32px}
+  .repertoire-list{max-height:55vh}
+  .repertoire-detail{position:static}
 }

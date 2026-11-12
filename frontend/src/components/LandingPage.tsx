@@ -5,12 +5,15 @@ const Plus = ({ size = 19 }: { size?: number }) => <svg width={size} height={siz
 const ArrowRight = () => <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
 const Upload = ({ size = 18 }: { size?: number }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
 
+const Book = ({ size = 18 }: { size?: number }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5v14zM4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></svg>
+
 interface LandingPageProps {
   onNewGame: () => void
   onLoadPGN: () => void
+  onLearnRepertoire: () => void
 }
 
-export default function LandingPage({ onNewGame, onLoadPGN }: LandingPageProps) {
+export default function LandingPage({ onNewGame, onLoadPGN, onLearnRepertoire }: LandingPageProps) {
   return (
     <main className="landing">
       <div className="ambient ambient-one" />
@@ -32,6 +35,9 @@ export default function LandingPage({ onNewGame, onLoadPGN }: LandingPageProps) 
             </button>
             <button className="secondary-action" onClick={onLoadPGN}>
               <Upload /> Carregar PGN
+            </button>
+            <button className="secondary-action" onClick={onLearnRepertoire}>
+              <Book /> Aprender repertório
             </button>
           </div>
         </div>

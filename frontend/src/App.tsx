@@ -5,10 +5,13 @@ import LoadPGNPage from './components/LoadPGNPage'
 import ColorSelector from './components/ColorSelector'
 import GameBoard from './components/GameBoard'
 import type { GameMode } from './components/GameBoard'
+import RepertoirePicker from './components/RepertoirePicker'
+import type { RepertoireSelection } from './components/RepertoirePicker'
+import RepertoireTrainer from './components/RepertoireTrainer'
 import { loadLLMConfig, saveLLMConfig } from './llmConfig'
 import type { LLMConfig } from './llmConfig'
 
-type Screen = 'home' | 'pgn-loader' | 'color-selection' | 'game'
+type Screen = 'home' | 'pgn-loader' | 'color-selection' | 'game' | 'repertoire-picker' | 'repertoire'
 type PlayerColor = 'white' | 'black'
 
 interface MoveDetail {
@@ -32,6 +35,7 @@ function App() {
   const [pendingPgn, setPendingPgn] = useState<string | null>(null)
   const [gameMode, setGameMode] = useState<GameMode>('training')
   const [llmConfig, setLlmConfig] = useState<LLMConfig | null>(loadLLMConfig)
+  const [repertoire, setRepertoire] = useState<RepertoireSelection | null>(null)
 
   const handleLLMConfigChange = (config: LLMConfig | null) => {
     setLlmConfig(config)
@@ -113,12 +117,39 @@ function App() {
     setScreen('home')
   }
 
+  const handleLearnRepertoire = () => {
+    setScreen('repertoire-picker')
+  }
+
+  const handleRepertoireStart = (selection: RepertoireSelection) => {
+    setRepertoire(selection)
+    setScreen('repertoire')
+  }
+
   return (
     <>
       {screen === 'home' && (
         <LandingPage 
           onNewGame={handleNewGame} 
-          onLoadPGN={handleLoadPGN} 
+          onLoadPGN={handleLoadPGN}
+          onLearnRepertoire={handleLearnRepertoire}
+        />
+      )}
+
+      {screen === 'repertoire-picker' && (
+        <RepertoirePicker
+          onStart={handleRepertoireStart}
+          onBack={handleBackHome}
+        />
+      )}
+
+      {screen === 'repertoire' && repertoire && (
+        <RepertoireTrainer
+          // A new selection starts a fresh session.
+          key={`${repertoire.opening.name}|${repertoire.color}`}
+          selection={repertoire}
+          onChangeOpening={handleLearnRepertoire}
+          onBackHome={handleBackHome}
         />
       )}
       

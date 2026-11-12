@@ -71,6 +71,61 @@ export function pickOpponentMove(
 export const hintMove = (node: RepertoireNode, key: string, completed: ReadonlySet<string>): RepertoireNode | null =>
   freshChildren(node, key, completed)[0] ?? null
 
+// One theoretical line of the tree, from the starting position to a line end.
+export interface LineInfo {
+  key: string
+  ucis: string[]
+  sans: string[]
+  // Deepest named opening along the line (normally the name the line ends with)
+  opening: { eco: string; name: string } | null
+}
+
+// Every line of the tree, in tree order (most mainstream first).
+export function listLines(root: RepertoireNode): LineInfo[] {
+  const lines: LineInfo[] = []
+  const walk = (node: RepertoireNode, path: RepertoireNode[]) => {
+    if (isLineEnd(node) && path.length > 0) {
+      const ucis = path.map(n => n.uci as string)
+      lines.push({ key: pathKey(ucis), ucis, sans: path.map(n => n.san as string), opening: deepestOpening(path) })
+      return
+    }
+    node.children.forEach(child => walk(child, [...path, child]))
+  }
+  walk(root, [])
+  return lines
+}
+
+export interface LineGroup {
+  name: string
+  lines: (LineInfo & { done: boolean })[]
+  done: number
+}
+
+/**
+ * The name one level below the trained opening, used to group its lines: under "Sicilian Defense",
+ * "Sicilian Defense: Najdorf Variation, English Attack" groups as "Sicilian Defense: Najdorf Variation";
+ * under the Najdorf, as "... Najdorf Variation, English Attack". The opening itself groups as itself.
+ */
+export function subOpeningName(name: string, openingName: string): string {
+  if (!name.startsWith(openingName) || name === openingName) return name
+  const rest = name.slice(openingName.length)
+  return openingName + rest[0] + rest.slice(1).split(',')[0]
+}
+
+// Lines grouped one level below the trained opening, groups in order of their first (most mainstream) line.
+export function groupLines(lines: LineInfo[], completed: ReadonlySet<string>, openingName: string): LineGroup[] {
+  const groups = new Map<string, LineGroup>()
+  for (const line of lines) {
+    const name = subOpeningName(line.opening?.name ?? openingName, openingName)
+    const group = groups.get(name) ?? { name, lines: [], done: 0 }
+    const done = completed.has(line.key)
+    group.lines.push({ ...line, done })
+    if (done) group.done += 1
+    groups.set(name, group)
+  }
+  return [...groups.values()]
+}
+
 // Name of the deepest named line reached along the path, e.g. "Sicilian Defense: Najdorf Variation".
 export function deepestOpening(path: RepertoireNode[]): { eco: string; name: string } | null {
   for (let i = path.length - 1; i >= 0; i--) {

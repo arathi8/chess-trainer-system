@@ -269,6 +269,28 @@ button {
 .repertoire-intro{background:#202520;border:1px solid #30372e;border-radius:6px;padding:9px 12px;margin-bottom:12px}
 .repertoire-intro summary{cursor:pointer;font-size:11px;color:var(--gold);letter-spacing:1px;text-transform:uppercase}
 .repertoire-intro .message{margin:10px 0 0}
+.repertoire-progress{margin-top:22px;padding-top:14px;border-top:1px solid #2a2e2a}
+.repertoire-progress summary{cursor:pointer;display:flex;flex-direction:column;gap:7px;font-size:11px;color:var(--gold);letter-spacing:.5px;list-style:none}
+.repertoire-progress summary::-webkit-details-marker{display:none}
+.repertoire-bar{display:block;height:5px;background:#2a2e2a;border-radius:3px;overflow:hidden}
+.repertoire-bar span{display:block;height:100%;background:var(--gold-light);transition:width .3s}
+.repertoire-progress .message.system{margin:10px 0 6px}
+.repertoire-group{margin-top:12px}
+.repertoire-group-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:11px;color:#c1c5bd;margin-bottom:4px;cursor:pointer;list-style:none}
+.repertoire-group-head::-webkit-details-marker{display:none}
+.repertoire-group-head b::before{content:'▸ ';color:#697267}
+.repertoire-group[open]>.repertoire-group-head b::before{content:'▾ '}
+.repertoire-group-head b{font-weight:600}
+.repertoire-group-head span{color:#8b9487;white-space:nowrap}
+.repertoire-group-head span.done{color:#95bb4a}
+.repertoire-group ul{list-style:none;margin:0;padding:0}
+.repertoire-group button{width:100%;display:grid;grid-template-columns:16px minmax(0,1fr) auto;gap:6px;align-items:baseline;background:none;border:0;border-radius:4px;color:#8b9487;text-align:left;padding:4px 6px;font-size:11px;font-family:Consolas,Menlo,monospace}
+.repertoire-group button:hover{background:#202520;color:#c1c5bd}
+.repertoire-group button em{display:block;font-style:normal;font-family:Arial,Helvetica,sans-serif;font-size:10px;color:#c1c5bd;margin-bottom:1px}
+.repertoire-group button.done{color:#aeb3a9}
+.repertoire-group button.done .repertoire-check{color:#95bb4a}
+.repertoire-group button.training{background:#2d3327;color:var(--gold-light)}
+.repertoire-group button small{font-family:Arial,Helvetica,sans-serif;font-size:9px;color:var(--gold);text-transform:uppercase;letter-spacing:.5px}
 .repertoire-coach + .move-coach{margin-top:22px;padding-top:16px;border-top:1px solid #2a2e2a}
 .repertoire-continue{max-width:600px;margin:18px auto 0;background:#202520;border:1px solid #5a4c33;border-radius:8px;padding:14px 16px;text-align:center}
 .repertoire-continue p{margin:0 0 12px;font-size:13px;color:#c1c5bd;line-height:1.5}

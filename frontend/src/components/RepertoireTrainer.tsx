@@ -20,7 +20,8 @@ import {
 import type { AnalysedMove, MoveAnalysis, RepertoireNode, RepertoireTree } from '../repertoire/api'
 import {
   classifyUserMove,
-  countLines,
+  groupLines,
+  listLines,
   deepestOpening,
   expectedMoves,
   hintMove,
@@ -29,7 +30,7 @@ import {
   pathKey,
   pickOpponentMove
 } from '../repertoire/drill'
-import { cloneGame, moveNumberLabel, moveToUci, plyFromFen } from '../chess/utils'
+import { cloneGame, formatMoves, moveNumberLabel, moveToUci, plyFromFen } from '../chess/utils'
 import type { RepertoireSelection } from './RepertoirePicker'
 
 type Phase = 'intro' | 'drill' | 'line-complete' | 'playout' | 'summary'
@@ -44,6 +45,8 @@ type CoachText =
 // Delay before the opponent's theoretical reply, so the user sees their own move land first.
 const OPPONENT_DELAY_MS = 450
 const MAX_LISTED_ERRORS = 5
+// Above this many variation groups the progress list starts collapsed.
+const MAX_OPEN_GROUPS = 20
 
 const CLASSIFICATION_LABELS: Record<string, string> = {
   'Best Move': 'melhor lance',
@@ -240,7 +243,20 @@ export default function RepertoireTrainer({
 
   const node = path[path.length - 1] as RepertoireNode | undefined
   const key = pathKey(ucisOf(path))
-  const totalLines = useMemo(() => (tree ? countLines(tree.tree) : 0), [tree])
+  const allLines = useMemo(() => (tree ? listLines(tree.tree) : []), [tree])
+  const totalLines = allLines.length
+  // SAN moves of the reference line: each line is labelled by the moves where it departs from it.
+  const referenceSans = useMemo(() => {
+    if (!tree) return []
+    const reference = new Chess()
+    try {
+      reference.loadPgn(tree.reference_line)
+    } catch {
+      // Dataset lines are validated by the backend; label lines from the start otherwise.
+    }
+    return reference.history()
+  }, [tree])
+  const [progressOpen, setProgressOpen] = useState(true)
   const reached = deepestOpening(path)
   const userTurn = Boolean(node && isUserTurn(node, color))
   const userToMoveInPlayout = (game.turn() === 'w') === (color === 'white')
@@ -497,7 +513,12 @@ export default function RepertoireTrainer({
   }
 
   // Hint visuals for the user's turn in the drill.
-  const hint = phase === 'drill' && node && userTurn && !pending && attempts > 0 ? hintMove(node, key, completed) : null
+  // When training a chosen line, the hint points along it; otherwise towards lines not seen yet.
+  const forcedUserMove = forcedLine && node ? node.children.find(c => c.uci === forcedLine[path.length - 1]) ?? null : null
+  const hint =
+    phase === 'drill' && node && userTurn && !pending && attempts > 0
+      ? forcedUserMove ?? hintMove(node, key, completed)
+      : null
   const hintFrom = hint?.uci?.slice(0, 2)
   const squareStyles: Record<string, CSSProperties> =
     hint && hintFrom ? { [hintFrom]: { boxShadow: 'inset 0 0 0 4px #e8c887', background: '#e8c88740' } } : {}
@@ -505,7 +526,73 @@ export default function RepertoireTrainer({
     hint?.uci && attempts >= 2 ? [{ startSquare: hint.uci.slice(0, 2), endSquare: hint.uci.slice(2, 4), color: '#e8c887' }] : []
 
   const shownGame = pending ? pending.game : game
-  const linesSeen = completed.size
+  const linesSeen = allLines.filter(line => completed.has(line.key)).length
+  const percent = (done: number, total: number) => (total > 0 ? Math.round((done / total) * 100) : 0)
+
+  // "Sicilian Defense: Najdorf Variation, English Attack" under the Najdorf -> "English Attack".
+  const shortName = (name: string) => {
+    if (name === opening.name) return 'Linha principal'
+    return name.startsWith(opening.name) ? name.slice(opening.name.length).replace(/^[:,]\s*/, '') : name
+  }
+
+  // A line is labelled by the moves from where it departs from the reference line.
+  const lineLabel = (sans: string[]) => {
+    let from = 0
+    while (from < sans.length && from < referenceSans.length && sans[from] === referenceSans[from]) from++
+    if (from >= sans.length) from = Math.max(0, sans.length - 2) // the reference line itself, or a prefix of it
+    return formatMoves(sans.slice(from), from)
+  }
+
+  const trainingKey = forcedLine ? pathKey(forcedLine) : null
+  const trainingLine = trainingKey ? allLines.find(line => line.key === trainingKey) ?? null : null
+  const groups = groupLines(allLines, completed, opening.name)
+
+  const progressPanel = tree && totalLines > 0 && (
+    <details
+      className="repertoire-progress"
+      open={progressOpen}
+      onToggle={e => setProgressOpen((e.currentTarget as HTMLDetailsElement).open)}
+    >
+      <summary>
+        <span>Progresso: {linesSeen} de {totalLines} linhas ({percent(linesSeen, totalLines)}%)</span>
+        <span className="repertoire-bar"><span style={{ width: `${percent(linesSeen, totalLines)}%` }} /></span>
+      </summary>
+      <p className="message system">
+        Cada linha vai da posição inicial até o fim da teoria conhecida. Clique em uma linha para treiná-la.
+      </p>
+      {groups.map(group => (
+        // Many groups (a whole family) start collapsed; few (a variation) start open.
+        <details key={group.name} className="repertoire-group" open={groups.length <= MAX_OPEN_GROUPS}>
+          <summary className="repertoire-group-head">
+            <b>{shortName(group.name)}</b>
+            <span className={group.done === group.lines.length ? 'done' : undefined}>
+              {group.done}/{group.lines.length} · {percent(group.done, group.lines.length)}%
+            </span>
+          </summary>
+          <ul>
+            {group.lines.map(line => (
+              <li key={line.key}>
+                <button
+                  className={[line.done && 'done', trainingKey === line.key && 'training'].filter(Boolean).join(' ') || undefined}
+                  onClick={() => startLine(line.ucis)}
+                  title={line.done ? 'Repetir esta linha' : 'Treinar esta linha'}
+                >
+                  <span className="repertoire-check">{line.done ? '✓' : '○'}</span>
+                  <span>
+                    {line.opening && line.opening.name !== group.name && (
+                      <em>{line.opening.name.slice(group.name.length).replace(/^[:,]\s*/, '')}</em>
+                    )}
+                    {lineLabel(line.sans)}
+                  </span>
+                  {trainingKey === line.key && <small>em treino</small>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ))}
+    </details>
+  )
   const canDrag =
     (phase === 'drill' && userTurn && !pending) ||
     (phase === 'playout' && !!playout && !playout.finished && !engineThinking && userToMoveInPlayout)
@@ -731,7 +818,7 @@ export default function RepertoireTrainer({
             <div>
               <b>Treinador de repertório</b>
               <span>
-                Você joga com as {color === 'white' ? 'brancas' : 'pretas'} · {linesSeen} de {totalLines} linhas
+                Você joga com as {color === 'white' ? 'brancas' : 'pretas'} · {linesSeen} de {totalLines} linhas ({percent(linesSeen, totalLines)}%)
               </span>
             </div>
           </div>
@@ -775,6 +862,11 @@ export default function RepertoireTrainer({
 
             {phase === 'drill' && node && (
               <div className="repertoire-coach">
+                {trainingLine && (
+                  <p className="message">
+                    Treinando a linha <b>{shortName(trainingLine.opening?.name ?? opening.name)}</b>: {lineLabel(trainingLine.sans)}
+                  </p>
+                )}
                 {userTurn ? (
                   <>
                     <p className="message">
@@ -783,7 +875,9 @@ export default function RepertoireTrainer({
                         : `Há ${expectedMoves(node).length} lances teóricos nesta posição; qualquer um deles vale.`}
                     </p>
                     {attempts === 1 && hint && (
-                      <p className="message system">Dica: a peça destacada é a que se move na linha principal.</p>
+                      <p className="message system">
+                        Dica: a peça destacada é a que se move {forcedUserMove ? 'na linha escolhida' : 'na linha principal'}.
+                      </p>
                     )}
                     {attempts >= 2 && hint && (
                       <p className="message system">A seta mostra o lance: {hint.san}. Jogue-o para continuar.</p>
@@ -861,6 +955,8 @@ export default function RepertoireTrainer({
             )}
 
             {whyPanel}
+
+            {phase !== 'intro' && progressPanel}
           </div>
         </aside>
       </div>

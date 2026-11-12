@@ -20,3 +20,14 @@ export const moveToUci = (move: Move): string => `${move.from}${move.to}${move.p
 
 // '12.' for White's move at ply 22, '12...' for Black's at ply 23 (0-based ply of the move).
 export const moveNumberLabel = (ply: number): string => `${Math.floor(ply / 2) + 1}${ply % 2 === 0 ? '.' : '...'}`
+
+// ['Be3', 'e5', 'Nb3'] from ply 10 -> '6. Be3 e5 7. Nb3'; a line starting on Black's move gets '6... '.
+export function formatMoves(sans: string[], firstPly = 0): string {
+  return sans
+    .map((san, i) => {
+      const ply = firstPly + i
+      if (ply % 2 === 0) return `${ply / 2 + 1}. ${san}`
+      return i === 0 ? `${moveNumberLabel(ply)} ${san}` : san
+    })
+    .join(' ')
+}

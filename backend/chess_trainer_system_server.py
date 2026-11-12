@@ -19,6 +19,7 @@ from services.llm_service import (
 )
 from services.openings_service import identify_opening, load_openings
 from services.report_service import compute_game_stats
+from services.repertoire_service import UnknownOpeningError, build_repertoire_tree, list_repertoire_catalog
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -117,6 +118,43 @@ class LLMProviderOption(BaseModel):
 class LLMProvidersResponse(BaseModel):
     default_provider: str
     providers: dict[str, LLMProviderOption]
+
+class RepertoireOpening(BaseModel):
+    name: str
+    eco: str
+    reference_line: str
+    lines: int
+    # Side that usually studies it: who plays the opening's defining move
+    default_color: Literal["white", "black"]
+
+class RepertoireFamily(RepertoireOpening):
+    variations: list[RepertoireOpening]
+
+class RepertoireCatalogResponse(BaseModel):
+    families: list[RepertoireFamily]
+
+class RepertoireNodeOpening(BaseModel):
+    eco: str
+    name: str
+
+class RepertoireNode(BaseModel):
+    # None only on the root (starting position)
+    san: Optional[str]
+    uci: Optional[str]
+    fen: str
+    ply: int
+    popularity: int
+    # Set when a named line of this opening ends here
+    opening: Optional[RepertoireNodeOpening]
+    # Most mainstream first; empty at the end of a line
+    children: list["RepertoireNode"]
+
+class RepertoireTreeResponse(BaseModel):
+    name: str
+    eco: str
+    reference_line: str
+    lines: int
+    tree: RepertoireNode
 
 # --- API Endpoints ---
 
@@ -224,6 +262,21 @@ def game_report(payload: GameReportRequest):
         raise HTTPException(status_code=500, detail=f"LLM configuration error: {e}")
 
     return GameReportResponse(report=report)
+
+
+@app.get("/api/repertoire/catalog", response_model=RepertoireCatalogResponse)
+def repertoire_catalog():
+    """Openings and defences the user can study, grouped by family, from the Lichess dataset."""
+    return RepertoireCatalogResponse(families=list_repertoire_catalog())
+
+
+@app.get("/api/repertoire/tree", response_model=RepertoireTreeResponse)
+def repertoire_tree(name: str):
+    """Theory tree of one opening (family or variation name, as listed by /api/repertoire/catalog)."""
+    try:
+        return build_repertoire_tree(name)
+    except UnknownOpeningError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 if __name__ == "__main__":

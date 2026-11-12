@@ -5,7 +5,7 @@ import io
 import threading
 from collections import Counter
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
 import chess
 import chess.pgn
@@ -16,16 +16,34 @@ MAX_THEORY_MOVES = 6
 Named = Dict[str, Tuple[str, str, str]]
 
 
+class OpeningLine(NamedTuple):
+    """One row of the dataset, with its moves already parsed."""
+    eco: str
+    name: str
+    pgn: str
+    moves: Tuple[chess.Move, ...]
+
+
+class OpeningsIndex(NamedTuple):
+    # final position of each dataset line -> (eco, name, pgn of the line)
+    named: Named
+    # every position along any dataset line (i.e. theory) -> how many lines pass through it,
+    # a rough proxy for how mainstream the position is
+    book: Counter
+    # every parseable dataset line, in file order
+    lines: Tuple[OpeningLine, ...]
+
+
 def position_key(board: chess.Board) -> str:
     """Position identity without move counters, so transpositions match."""
     return board.epd()
 
 
-_openings: Optional[Tuple[Named, Counter]] = None
+_openings: Optional[OpeningsIndex] = None
 _openings_lock = threading.Lock()
 
 
-def load_openings() -> Tuple[Named, Counter]:
+def load_openings() -> OpeningsIndex:
     """
     Indexes the dataset once and caches it. Indexing takes a few seconds, so the server preloads it
     at startup; a caller arriving mid-build waits for it instead of building a second copy.
@@ -37,28 +55,27 @@ def load_openings() -> Tuple[Named, Counter]:
         return _openings
 
 
-def build_openings_index() -> Tuple[Named, Counter]:
-    """
-    Returns (named, book):
-    - named: final position of each dataset line -> (eco, name, pgn of the line)
-    - book: every position along any dataset line (i.e. theory) -> how many lines pass through it,
-      a rough proxy for how mainstream the position is
-    """
+def build_openings_index() -> OpeningsIndex:
+    """Parses every dataset line once; see OpeningsIndex for what is indexed."""
     named: Named = {}
     book: Counter = Counter({position_key(chess.Board()): 1})
+    lines: List[OpeningLine] = []
     with OPENINGS_FILE.open(encoding="utf-8") as f:
         for row in csv.DictReader(f, delimiter="\t"):
             board = chess.Board()
+            keys = []
             try:
                 for token in row["pgn"].split():
                     if token[0].isdigit():  # move numbers like "1." or "12..."
                         continue
                     board.push_san(token)
-                    book[position_key(board)] += 1
+                    keys.append(position_key(board))
             except ValueError:
                 continue
+            book.update(keys)
             named[position_key(board)] = (row["eco"], row["name"], row["pgn"])
-    return named, book
+            lines.append(OpeningLine(row["eco"], row["name"], row["pgn"], tuple(board.move_stack)))
+    return OpeningsIndex(named, book, tuple(lines))
 
 
 def ply_label(ply: int) -> str:
@@ -90,7 +107,7 @@ def identify_opening(pgn: str, user_color: str) -> Optional[Dict[str, Any]]:
     if game is None or game.board().fen() != chess.STARTING_FEN:
         return None
 
-    named, book = load_openings()
+    named, book, _ = load_openings()
     board = game.board()
     moves = list(game.mainline_moves())
 

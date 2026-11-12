@@ -161,6 +161,10 @@ export default function GameBoard({
     setTree(treeRef.current)
   }
 
+  // The moves of the game itself: the start of the mainline. After the game, moves played past its
+  // end extend the mainline for analysis, but take no part in the report.
+  const gameMoves = () => mainline(treeRef.current).slice(0, gameRef.current.history().length)
+
   // Refs, not state: the report is assembled after async work, where state would be stale.
   const finishedRef = useRef(isReview)
   const pendingAnalysesRef = useRef<Set<Promise<void>>>(new Set())
@@ -284,9 +288,35 @@ export default function GameBoard({
     startGame()
   }, [])
 
+  // After the game the board is for analysis: a move played from any position opens a variation
+  // there (or follows the one already played), and is classified like the game's moves.
+  const playAnalysisMove = (sourceSquare: Square, targetSquare: Square): boolean => {
+    let move: Move
+    try {
+      move = new Chess(fenAt(treeRef.current, cursorId)).move({ from: sourceSquare, to: targetSquare, promotion: 'q' })
+    } catch {
+      return false
+    }
+
+    const parentId = cursorId
+    let id = parentId
+    let isNew = false
+    updateTree(current => {
+      const added = addMove(current, parentId, move)
+      id = added.id
+      isNew = added.tree !== current
+      return added.tree
+    })
+    setCursorId(id)
+    if (isNew) requestEngineAnalysis(id)
+    return true
+  }
+
   const onDrop = (sourceSquare: Square, targetSquare: Square): boolean => {
-    // Moves are played from the current position only, not while looking at an earlier one.
-    if (gameFinished || cursorId !== lineEnd(tree, ROOT)) return false
+    if (gameFinished) return playAnalysisMove(sourceSquare, targetSquare)
+
+    // During the game, moves are played from the current position only, not while looking at an earlier one.
+    if (cursorId !== lineEnd(tree, ROOT)) return false
 
     const currentTurn: PlayerColor = game.turn() === 'w' ? 'white' : 'black'
 
@@ -403,7 +433,7 @@ export default function GameBoard({
   }
 
   const submitReport = async (finalGame: Chess, result: string, termination: string, imported: boolean) => {
-    const moves: ReportMove[] = mainline(treeRef.current)
+    const moves: ReportMove[] = gameMoves()
       .filter(node => isUserPly(node.ply))
       .filter(isAnalysed)
       .map(node => ({ ply: node.ply, san: node.san, ...toAnalysisPayload(node) }))
@@ -433,10 +463,10 @@ export default function GameBoard({
     await requestCoachReport()
   }
 
-  // Classifies every move of one side that has no analysis yet, a few at a time.
+  // Classifies every move of one side of the game that has no analysis yet, a few at a time.
   // Imported games are analysed this way; training games only use it to retry failed analyses.
   const analyseMoves = async (side: 'user' | 'opponent', onProgress?: (done: number, total: number) => void) => {
-    const queue = mainline(treeRef.current)
+    const queue = gameMoves()
       .filter(node => isUserPly(node.ply) === (side === 'user') && !node.analysis)
       .map(node => node.id)
 

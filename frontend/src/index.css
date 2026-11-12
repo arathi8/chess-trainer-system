@@ -241,3 +241,12 @@ button {
 .board-controls{display:flex;justify-content:center;gap:6px;margin-top:12px}
 .board-controls .outline-btn{padding:8px 0;width:64px}
 .board-controls .outline-btn:disabled{opacity:.35;cursor:default}
+.move-row .ellipsis{color:#5d655b}
+.start-move.selected-move{color:var(--gold-light)}
+.variation{margin:2px 0 6px 30px;padding:3px 0 3px 8px;border-left:2px solid #3a4038}
+.variation-line{display:flex;flex-wrap:wrap;align-items:center;line-height:1.8}
+.variation-move,.variation-nested{display:inline-flex;flex-wrap:wrap;align-items:center}
+.variation-nested{color:#5d655b;font-size:11px;margin:0 2px}
+.variation button{background:none;border:0;color:#8b9487;font-size:11px;padding:1px 3px;border-radius:3px;display:inline-flex;align-items:center;gap:4px}
+.variation button:hover{color:#e5e4db}
+.variation button.selected-move{background:#2d3327;color:var(--gold-light);box-shadow:inset 0 0 0 1px #5a4c33}

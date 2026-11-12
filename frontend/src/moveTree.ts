@@ -136,6 +136,13 @@ export function mainline(tree: MoveTree): MoveNode[] {
   return first ? lineFrom(tree, first) : []
 }
 
+// The variations branching off where `node` was played: its siblings, listed after the main
+// continuation. Empty when `node` is itself a variation (its siblings are listed with the main move).
+export function variationsAt(tree: MoveTree, node: MoveNode): MoveNode[] {
+  const [main, ...alternatives] = tree.children[node.parentId]
+  return main === node.id ? alternatives.map(id => tree.nodes[id]) : []
+}
+
 export function moveNumberLabel(ply: number): string {
   return `${Math.floor(ply / 2) + 1}${ply % 2 === 0 ? '.' : '...'}`
 }

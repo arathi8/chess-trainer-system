@@ -155,6 +155,46 @@ button {
 .chat-content{padding:20px;flex:1;overflow-y:auto}
 .message{margin:18px 0;font-size:12px;line-height:1.6;color:#c1c5bd}
 .message.system{color:#8b9487;font-style:italic;font-size:11px}
+.game-layout.finished{grid-template-columns:270px minmax(500px,1fr) 400px}
+.game-report{margin-bottom:22px;padding-bottom:18px;border-bottom:1px solid #2a2e2a}
+.report-result{font-size:16px;font-weight:500;margin:8px 0 16px}
+.report-accuracy{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;background:#202520;border:1px solid #30372e;border-radius:6px;padding:12px 14px;margin-bottom:14px}
+.report-accuracy span{font-size:11px;color:#8b9487;letter-spacing:1px;text-transform:uppercase}
+.report-accuracy b{font-size:26px;font-weight:600;color:var(--gold-light)}
+.report-accuracy small{flex-basis:100%;font-size:10px;color:#767e74}
+.report-opening{display:flex;flex-direction:column;gap:3px;background:#202520;border:1px solid #30372e;border-radius:6px;padding:10px 14px;margin-bottom:14px}
+.report-opening span{font-size:10px;color:var(--gold);letter-spacing:1px}
+.report-opening b{font-size:12px;font-weight:600;color:#e5e4db}
+.report-opening small{font-size:10px;color:#8b9487;line-height:1.5}
+.report-counts{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;margin-bottom:14px;font-size:11px;color:#aeb3a9}
+.report-counts>div{display:flex;align-items:center;gap:8px}
+.report-counts .tag{font-size:10px;min-width:20px;text-align:center}
+.report-phases{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:16px;color:#c1c5bd}
+.report-phases th{text-align:left;font-weight:500;color:#767e74;font-size:10px;padding:4px 4px 6px;border-bottom:1px solid #2a2e2a}
+.report-phases td{padding:6px 4px;border-bottom:1px solid #222621}
+.report-moments{display:flex;flex-direction:column;gap:6px;margin-bottom:6px}
+.report-moments .eyebrow{margin-bottom:4px}
+.report-moments button{text-align:left;background:#202520;border:1px solid #30372e;border-radius:5px;padding:9px 11px;color:#c1c5bd;display:flex;flex-direction:column;gap:3px;cursor:pointer}
+.report-moments button:hover{border-color:#5a4c33}
+.report-moments b{font-size:12px;font-weight:600}
+.report-moments span{font-size:10px;color:#8b9487}
+.report-moments small{font-size:10px;color:#e58f2a}
+.report-error{background:#3d2020;border:1px solid #5a2a2a;border-radius:6px;padding:10px 12px;margin-top:14px;font-size:11px;color:#ff9b9b}
+.report-error p{margin:0 0 10px}
+.report-error>div{display:flex;gap:8px;flex-wrap:wrap}
+.move-coach{margin-top:4px;scroll-margin-top:12px}
+.move-coach-target{font-size:11px;line-height:1.5;color:#aeb3a9;margin:8px 0 10px}
+.move-coach-target b{color:var(--gold-light);font-weight:600}
+.move-coach-btn{width:100%;justify-content:center}
+.move-row button.selected-move{background:#2d3327;color:var(--gold-light);border-radius:4px;box-shadow:inset 0 0 0 1px #5a4c33}
+
+/* Fixed-height game screen: each column scrolls on its own, so the report panel scrolls inside itself */
+.game-shell{height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.game-shell>.topbar{flex-shrink:0}
+.game-layout{flex:1;min-height:0;width:100%}
+.history-panel,.center-stage{overflow-y:auto}
+.chat-panel{min-height:0;overflow:hidden}
+.chat-content{min-height:0}
 .chat-input{margin:0 18px 18px;background:#222721;border:1px solid #384237;border-radius:6px;display:flex;padding:4px}
 .chat-input input{background:none;border:0;outline:0;color:#e7e4d9;padding:8px;font-size:11px;min-width:0;flex:1}
 .chat-input button{border:0;background:var(--gold);color:#1d2118;border-radius:4px;width:33px;display:grid;place-items:center}
@@ -194,5 +234,7 @@ button {
   .game-layout{display:flex;flex-direction:column}
   .history-panel{order:2;border-right:0;border-top:1px solid #2a2e2a}
   .center-stage{order:1;padding:24px 16px}
-  .chat-panel{order:3;border-left:0;border-top:1px solid #2a2e2a;min-height:460px}
+  .chat-panel{order:3;border-left:0;border-top:1px solid #2a2e2a;min-height:460px;overflow:visible}
+  .game-shell{height:auto;overflow:visible}
+  .chat-content{overflow:visible}
 }

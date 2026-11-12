@@ -1,13 +1,31 @@
 import math
-import chess
-import chess.engine
-from typing import Optional, Tuple
-from pathlib import Path
 import os
+import random
 import shutil
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
+
+import chess
+import chess.engine
+
+# Training games: during the first GRACE_FULLMOVES the engine avoids moves that push its
+# win probability above GRACE_WIN_CAP, so early mistakes are not punished at once.
+GRACE_FULLMOVES = 12
+GRACE_WIN_CAP = 70.0
+# Lenient alternatives must still keep the engine at least this well off (it never gives the game away).
+GRACE_WIN_FLOOR = 50.0
+
+# Training games: to avoid repeating the same line every game, the engine picks at random among
+# candidates whose win% (its own POV) is within this margin of the best move. The margin is wider
+# in the opening, where several moves are about equally good, and narrow afterwards.
+VARIETY_OPENING_FULLMOVES = 10
+VARIETY_WIN_MARGIN_OPENING = 3.0
+VARIETY_WIN_MARGIN = 1.5
+
+# Candidate moves searched per training move. 3 at depth 20 costs about the same as a plain
+# engine.play at depth 20 (~2s); 5 candidates took 8-10s.
+TRAINING_MULTIPV = 3
 
 def find_stockfish() -> str:
     """Find the Stockfish executable bundled with the project or on PATH."""
@@ -62,7 +80,7 @@ def parse_move(board: chess.Board, user_move_uci: str) -> Optional[chess.Move]:
     return user_move
 
 
-def format_engine_analysis(
+def stringfy_engine_analysis(
     board: chess.Board,
     engine_result: chess.engine.InfoDict,
     max_moves_to_display: int = 15,
@@ -76,7 +94,7 @@ def format_engine_analysis(
     if "score" in engine_result:
         score = engine_result["score"].white()
         if score.is_mate():
-            score_str = f"Mate in {score.mate()} plies"
+            score_str = f"Mate in {score.mate()} moves"
         else:
             cp = score.score()
             if cp is not None:
@@ -149,24 +167,89 @@ def get_move_classification(
 
 # --- orchestator calls ---
 
-def get_engine_move(fen: str, min_depth: int = 20) -> Optional[str]:
+def choose_lenient_move(board: chess.Board, candidates: list[chess.engine.InfoDict]) -> Tuple[chess.Move, bool]:
+    """
+    Picks the strongest candidate whose win% (engine's POV) stays within [GRACE_WIN_FLOOR, GRACE_WIN_CAP].
+    Candidates are sorted best-first. When the best move is already at or under the cap, it is played
+    (full strength). Otherwise the engine takes the first sound candidate under the cap, or, if every
+    sound candidate exceeds it, the lowest-scoring sound one.
+    Returns the move and whether it differs from the engine's best move.
+    """
+    scored = [
+        (info["pv"][0], cp_to_win_percent(extract_cp(info["score"], board.turn)))
+        for info in candidates
+        if info.get("pv") and "score" in info
+    ]
+    if not scored:
+        raise ValueError("Engine returned no candidate moves")
+
+    best_move, best_win = scored[0]
+    if best_win <= GRACE_WIN_CAP:
+        return best_move, False
+
+    sound = [(move, win) for move, win in scored if win >= GRACE_WIN_FLOOR]
+    chosen = next((move for move, win in sound if win <= GRACE_WIN_CAP), sound[-1][0])
+    return chosen, chosen != best_move
+
+
+def choose_varied_move(
+    board: chess.Board,
+    candidates: list[chess.engine.InfoDict],
+    rng: random.Random | None = None,
+) -> chess.Move:
+    """
+    Picks at random among the candidates that are nearly as good as the best one (see VARIETY_*).
+    A forced mate for the engine is always played.
+    """
+    rng = rng or random
+    scored = [
+        (info["pv"][0], info["score"].pov(board.turn), cp_to_win_percent(extract_cp(info["score"], board.turn)))
+        for info in candidates
+        if info.get("pv") and "score" in info
+    ]
+    if not scored:
+        raise ValueError("Engine returned no candidate moves")
+
+    best_move, best_score, best_win = scored[0]
+    if best_score.is_mate() and (best_score.mate() or 0) > 0:
+        return best_move
+
+    margin = VARIETY_WIN_MARGIN_OPENING if board.fullmove_number <= VARIETY_OPENING_FULLMOVES else VARIETY_WIN_MARGIN
+    near_best = [move for move, _, win in scored if win >= best_win - margin]
+    return rng.choice(near_best)
+
+
+def get_engine_move(fen: str, min_depth: int = 20, training: bool = False) -> Tuple[str, bool]:
     """
     Calculate the engine's move for the given position.
+    In training mode the engine is lenient during the opening (see GRACE_* constants) and varies
+    its choice among near-equal moves (see VARIETY_* constants).
+    Returns (move_uci, grace_applied). Raises ValueError on an invalid or finished position.
     """
-    stockfish_path = find_stockfish()
     board = parse_board(fen)
-    try:
-        with chess.engine.SimpleEngine.popen_uci(stockfish_path) as engine:
-            result = engine.play(board, chess.engine.Limit(depth=min_depth))
-            
-            if result.move:
-                return result.move.uci()
-                
-         
-        
-    except Exception as err:
-        print(f"Engine execution failure: {err}", file=sys.stderr)
-    
+    if board is None:
+        raise ValueError(f"Invalid FEN: {fen}")
+    if board.is_game_over():
+        raise ValueError("The game is already over in this position")
+
+    stockfish_path = find_stockfish()
+    limit = chess.engine.Limit(depth=min_depth)
+    with chess.engine.SimpleEngine.popen_uci(stockfish_path) as engine:
+        if training:
+            candidates = engine.analyse(board, limit, multipv=TRAINING_MULTIPV)
+
+            if board.fullmove_number <= GRACE_FULLMOVES:
+                move, grace_applied = choose_lenient_move(board, candidates)
+                if grace_applied:
+                    return move.uci(), True
+
+            return choose_varied_move(board, candidates).uci(), False
+
+        result = engine.play(board, limit)
+        if result.move is None:
+            raise ValueError("Engine returned no move")
+        return result.move.uci(), False
+
 
 def get_move_analysis(
     fen: str,
@@ -195,13 +278,13 @@ def get_move_analysis(
                 limit_kwargs["time"] = time_limit
             search_limit = chess.engine.Limit(**limit_kwargs)
 
-            before_move_analysis = engine.analyse(board, search_limit)
-            formated_before_move_analysis = format_engine_analysis(board, before_move_analysis)
+            analysis_before_move = engine.analyse(board, search_limit)
+            formated_before_move_analysis = stringfy_engine_analysis(board, analysis_before_move)
             board.push(user_move)
-            after_move_analysis = engine.analyse(board, search_limit)
-            formated_after_move_analysis = format_engine_analysis(board, after_move_analysis)
+            analysis_after_move = engine.analyse(board, search_limit)
+            formated_after_move_analysis = stringfy_engine_analysis(board, analysis_after_move)
 
-            move_classification, move_delta = get_move_classification(user_move, user_color, before_move_analysis, after_move_analysis)
+            move_classification, move_delta = get_move_classification(user_move, user_color, analysis_before_move, analysis_after_move)
 
             return {
                 "before_move_analysis": formated_before_move_analysis,

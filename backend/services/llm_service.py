@@ -1,6 +1,8 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 
 from openai import OpenAI, APIError as OpenAIAPIError
+
+from services.report_service import generate_report_prompt
 
 SYSTEM_PROMPT = "You are a chess expert assistant. Respond using Markdown formatting."
 TIMEOUT = 60.0
@@ -107,68 +109,14 @@ class LLMService:
             raise LLMError(f"[{self.provider}/{self.model}] {e}") from e
 
 
-def format_analysis_block(summary: Dict[str, Any]) -> str:
-    """Formats the analysis summary dictionary into a standardized text block for the LLM."""
-    label = summary.get("label", "POSITION EVALUATION")
-    return (
-        f"\n📊 --- {label} ---\n"
-        f"[] FEN: {summary['fen']}\n"
-        f"👉 Suggested best move: {summary['best_move']}\n"
-        f"📈 Position evaluation for White: {summary['evaluation']}\n"
-        f"🔬 Depth reached: {summary['depth']} plies\n"
-        f"♟️ Line: {summary['line']}\n"
-        f"---------------------------\n"
-    )
-
-def generate_prompt(
-    before_analysis: Dict[str, Any],
-    after_analysis: Dict[str, Any],
-    classification: Optional[str] = None,
-    win_loss_delta: float = 0.0,
-) -> str:
-    """Builds the complete semantic prompt anchoring the LLM to the engine's mathematical evaluation."""
-    before = {**before_analysis, "label": "BEFORE USER MOVE"}
-    after = {**after_analysis, "label": "AFTER USER MOVE"}
-
-    prompt = (
-        "The user wants to understand the engine evaluation of this position. "
-        "Explain it like a chess coach, comparing the suggested best move with the played move. "
-        "Focus on a short answer."
-    )
-
-    prompt += "\n" + format_analysis_block(before)
-    prompt += "\n" + format_analysis_block(after)
-
-    if classification:
-        prompt += (
-            f"\n🎯 System Classification: {classification}\n"
-            f"📉 Delta move: {win_loss_delta}\n"
-        )
-
-    return prompt
-
-def generate_evaluation(
-    before_analysis: Dict[str, Any],
-    after_analysis: Dict[str, Any],
-    classification: Optional[str] = None,
-    win_loss_delta: float = 0.0,
-    # BYOK parameters forwarded from API/Frontend request
+def complete_prompt(
+    prompt: str,
     provider: str = DEFAULT_PROVIDER,
     api_key: Optional[str] = None,
     model: Optional[str] = None,
     base_url: Optional[str] = None,
 ) -> str:
-    """Instantiates the service on demand using user-provided credentials or defaults.
-
-    With the prompt-only provider, returns the generated prompt without calling any LLM.
-    """
-    prompt = generate_prompt(
-        before_analysis=before_analysis,
-        after_analysis=after_analysis,
-        classification=classification,
-        win_loss_delta=win_loss_delta,
-    )
-
+    """Sends the prompt to the configured LLM, or returns it as-is with the prompt-only provider."""
     if provider.lower() == PROMPT_ONLY_PROVIDER:
         return format_prompt_only(prompt)
 
@@ -179,3 +127,103 @@ def generate_evaluation(
         base_url=base_url,
     )
     return llm_service.request(prompt)
+
+
+def format_analysis_block(analysis: Dict[str, Any]) -> str:
+    """Formats the analysis summary dictionary into a standardized text block for the LLM."""
+    label = analysis.get("label", "POSITION EVALUATION")
+    return (
+        f"\n📊 --- {label} ---\n"
+        f"[] FEN: {analysis['fen']}\n"
+        f"👉 Suggested best move: {analysis['best_move']}\n"
+        f"📈 Position evaluation for White: {analysis['evaluation']}\n"
+        f"🔬 Depth reached: {analysis['depth']} plies\n"
+        f"♟️ Line: {analysis['line']}\n"
+        f"---------------------------\n"
+    )
+
+def generate_prompt(move_analysis: Dict[str, Any], mover: str = "user") -> str:
+    """Builds the complete semantic prompt anchoring the LLM to the engine's mathematical evaluation.
+
+    `mover` is "user" when the user played the move, "opponent" when their opponent did.
+    """
+    by_opponent = mover == "opponent"
+    who = "OPPONENT" if by_opponent else "USER"
+    before = {**move_analysis["before_move_analysis"], "label": f"BEFORE {who} MOVE"}
+    after = {**move_analysis["after_move_analysis"], "label": f"AFTER {who} MOVE"}
+    classification = move_analysis.get("move_classification")
+    move_delta = move_analysis.get("move_delta", 0.0)
+
+    if by_opponent:
+        prompt = (
+            "The user wants to understand a move played by their OPPONENT, not by the user. "
+            "Explain it like a chess coach talking to the user: what the opponent's idea was and how good the move was "
+            "compared with the engine's suggested best move. Then tell the user what it means for them: if it was a "
+            "mistake, how the user could exploit or punish it; if it was strong, which threat or plan it creates and "
+            "how the user should respond. Always refer to it as the opponent's move. Focus on a short answer."
+        )
+    else:
+        prompt = (
+            "The user wants to understand the engine evaluation of this position. "
+            "Explain it like a chess coach, comparing the suggested best move with the played move. "
+            "Focus on a short answer."
+        )
+
+    prompt += "\n" + format_analysis_block(before)
+    prompt += "\n" + format_analysis_block(after)
+
+    if classification:
+        classification_label = (
+            "System Classification of the opponent's move" if by_opponent else "System Classification"
+        )
+        prompt += (
+            f"\n🎯 {classification_label}: {classification}\n"
+            f"📉 Delta move: {move_delta}\n"
+        )
+
+    return prompt
+
+def generate_move_evaluation(
+    move_analysis: Dict[str, Any],
+    mover: str = "user",
+    # BYOK parameters forwarded from API/Frontend request
+    provider: str = DEFAULT_PROVIDER,
+    api_key: Optional[str] = None,
+    model: Optional[str] = None,
+    base_url: Optional[str] = None,
+) -> str:
+    """Evaluates the user's move from its engine analysis, as returned by get_move_analysis.
+
+    Instantiates the LLM service on demand using user-provided credentials or defaults.
+    With the prompt-only provider, returns the generated prompt without calling any LLM.
+    """
+    return complete_prompt(generate_prompt(move_analysis, mover), provider, api_key, model, base_url)
+
+
+def generate_game_report(
+    stats: Dict[str, Any],
+    result: str,
+    termination: str,
+    pgn: str = "",
+    lenient_plies: Optional[List[int]] = None,
+    imported: bool = False,
+    # BYOK parameters forwarded from API/Frontend request
+    provider: str = DEFAULT_PROVIDER,
+    api_key: Optional[str] = None,
+    model: Optional[str] = None,
+    base_url: Optional[str] = None,
+) -> str:
+    """Writes the coach's post-game report from the game stats, as returned by compute_game_stats.
+
+    Instantiates the LLM service on demand using user-provided credentials or defaults.
+    With the prompt-only provider, returns the generated prompt without calling any LLM.
+    """
+    prompt = generate_report_prompt(
+        stats,
+        result=result,
+        termination=termination,
+        pgn=pgn,
+        lenient_plies=lenient_plies,
+        imported=imported,
+    )
+    return complete_prompt(prompt, provider, api_key, model, base_url)

@@ -82,4 +82,4 @@ yarn dev
 3. Drag and drop pieces on the central board. 
 4. Each move you make is immediately validated and recorded in the left-hand navigation panel.
 5. The system automatically classifies your move in the background and applies a badge (e.g., `??` for Blunder).
-6. Click the **"Avaliar lance"** button in the right-hand panel. This gathers the calculated data from your last move and hits the `/semantic-evaluation` endpoint, displaying the detailed coach feedback explaining your position.
+6. Click the **"Avaliar lance"** button in the right-hand panel. This gathers the calculated data from your last move and hits the `/move-evaluation` endpoint, displaying the detailed coach feedback explaining your position.

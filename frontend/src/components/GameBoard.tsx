@@ -1,13 +1,21 @@
 import { useState, useRef, useEffect } from 'react'
+import type { Move } from 'chess.js'
 import { Chess } from 'chess.js'
 import type { Square } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 import LLMSettings from './LLMSettings'
+import GameReport from './GameReport'
+import type { CoachReport, GameStats } from './GameReport'
 import { API_BASE_URL } from '../api'
 import type { LLMConfig } from '../llmConfig'
 import ReactMarkdown from 'react-markdown'
 
 type PlayerColor = 'white' | 'black'
+// training: play Stockfish with feedback hidden until the end; review: analyse an imported PGN
+export type GameMode = 'training' | 'review'
+
+// Engine analyses running at once when analysing an imported game.
+const IMPORT_ANALYSIS_CONCURRENCY = 2
 
 interface MoveDetail {
   san: string
@@ -42,6 +50,7 @@ interface GameBoardProps {
   initialGame?: Chess
   initialHistory?: MoveRow[]
   userColor: PlayerColor
+  mode?: GameMode
   llmConfig: LLMConfig | null
   onLLMConfigChange: (config: LLMConfig | null) => void
   onNewGame: () => void
@@ -56,10 +65,87 @@ interface PositionAnalysis {
   line: string;
 }
 
+// One analysed user move, in the shape /api/game-stats expects.
+interface MoveAnalysis {
+  ply: number
+  san: string
+  move_classification: string
+  move_delta: number
+  before_move_analysis: PositionAnalysis
+  after_move_analysis: PositionAnalysis
+}
+
+// What /api/game-report needs besides the BYOK settings; kept to retry the coach's report.
+interface ReportContext {
+  stats: GameStats
+  result: string
+  termination: string
+  pgn: string
+  lenient_plies: number[]
+  imported: boolean
+}
+
+// Half-move index of the side to move in a FEN: 0 = White's first move.
+const plyFromFen = (fen: string): number => {
+  const [, turn, , , , fullmove] = fen.split(' ')
+  return (Number(fullmove) - 1) * 2 + (turn === 'b' ? 1 : 0)
+}
+
+const MIN_MOVES_FOR_REPORT = 3
+
+function describeResult(game: Chess, termination: string, userColor: PlayerColor): { result: string; label: string } {
+  if (termination === 'resignation') {
+    return { result: userColor === 'white' ? '0-1' : '1-0', label: 'Você abandonou a partida' }
+  }
+  if (termination === 'checkmate') {
+    const userLost = (game.turn() === 'w') === (userColor === 'white')
+    return { result: game.turn() === 'w' ? '0-1' : '1-0', label: userLost ? 'Xeque-mate: você perdeu' : 'Xeque-mate: você venceu!' }
+  }
+  const drawLabels: Record<string, string> = {
+    stalemate: 'Empate por afogamento',
+    threefold_repetition: 'Empate por repetição',
+    insufficient_material: 'Empate por material insuficiente',
+    draw: 'Empate'
+  }
+  return { result: '1/2-1/2', label: drawLabels[termination] ?? 'Empate' }
+}
+
+function describeImportedResult(result?: string): string {
+  const labels: Record<string, string> = {
+    '1-0': 'Partida importada: vitória das brancas',
+    '0-1': 'Partida importada: vitória das pretas',
+    '1/2-1/2': 'Partida importada: empate'
+  }
+  return (result && labels[result]) || 'Partida importada'
+}
+
+// Player name from the PGN headers, ignoring the "?" placeholder.
+function importedName(game: Chess, header: 'White' | 'Black', fallback: string): string {
+  const name = game.getHeaders()[header]
+  return name && name !== '?' ? name : fallback
+}
+
+// Copies a game with its move history (new Chess(fen) would keep only the position, so the
+// final PGN would lose the opening moves and start from a FEN).
+function cloneGame(game: Chess): Chess {
+  const copy = new Chess()
+  copy.loadPgn(game.pgn())
+  return copy
+}
+
+function detectTermination(game: Chess): string {
+  if (game.isCheckmate()) return 'checkmate'
+  if (game.isStalemate()) return 'stalemate'
+  if (game.isThreefoldRepetition()) return 'threefold_repetition'
+  if (game.isInsufficientMaterial()) return 'insufficient_material'
+  return 'draw'
+}
+
 export default function GameBoard({
   initialGame,
   initialHistory = [],
   userColor,
+  mode = 'training',
   llmConfig,
   onLLMConfigChange,
   onNewGame,
@@ -73,20 +159,42 @@ export default function GameBoard({
   const [semanticAnalysisReady, setSemanticAnalysisReady] = useState(false)
   const [reviewMode, setReviewMode] = useState(false)
   const [reviewFen, setReviewFen] = useState<string | null>(null)
-  const [assistEnabled, setAssistEnabled] = useState(true)
   const [llmSettingsOpen, setLlmSettingsOpen] = useState(false)
+
+  const isReview = mode === 'review'
+
+  // Training game: feedback stays hidden until the game ends, then the report is shown.
+  // An imported game starts in that post-game state.
+  const [gameFinished, setGameFinished] = useState(isReview)
+  const [resultLabel, setResultLabel] = useState(() =>
+    isReview ? describeImportedResult(initialGame?.getHeaders().Result) : ''
+  )
+  const [importProgress, setImportProgress] = useState<{ done: number; total: number } | null>(null)
+  // Opponent moves still unclassified after the game (imported games, or failed analyses in training).
+  const [opponentAnalysing, setOpponentAnalysing] = useState(false)
+  const [stats, setStats] = useState<GameStats | null>(null)
+  const [statsLoading, setStatsLoading] = useState(false)
+  const [coachReport, setCoachReport] = useState<CoachReport>({ text: null, error: null, loading: false })
+  const [reportMessage, setReportMessage] = useState<string | null>(null)
+  const [selectedMove, setSelectedMove] = useState<{ turnNumber: number; isWhite: boolean } | null>(null)
 
   const gameRef = useRef<Chess>(game)
   gameRef.current = game
 
-  const lastMoveRef = useRef<{ fenBefore: string; moveUci: string } | null>(null)
+  // Refs, not state: the report is assembled after async work, where state would be stale.
+  const finishedRef = useRef(isReview)
+  const analysisByPlyRef = useRef<Map<number, MoveAnalysis>>(new Map())
+  const pendingAnalysesRef = useRef<Set<Promise<void>>>(new Set())
+  const lenientPliesRef = useRef<number[]>([])
+  const reportContextRef = useRef<ReportContext | null>(null)
+  const autoAnalysisStartedRef = useRef(false)
+  const gameStartedRef = useRef(false)
+  const moveCoachRef = useRef<HTMLDivElement>(null)
 
-  const recordMove = (san: string, fen: string): { turnNumber: number; isWhite: boolean } => {
-    const lastRow = moveHistory[moveHistory.length - 1]
-    const isNewTurn = !lastRow || Boolean(lastRow.white && lastRow.black)
-    const turnNumber = isNewTurn ? moveHistory.length + 1 : lastRow.turnNumber
-    const isWhite = isNewTurn
+  // Plies are 0-based half-moves: even = White's moves.
+  const isUserPly = (ply: number) => (ply % 2 === 0) === (userColor === 'white')
 
+  const recordMove = (san: string, fen: string) => {
     setMoveHistory(prev => {
       const nextHistory = [...prev]
       const row = nextHistory[nextHistory.length - 1]
@@ -99,8 +207,6 @@ export default function GameBoard({
 
       return nextHistory
     })
-
-    return { turnNumber, isWhite }
   }
 
   const attachEngineAnalysis = (
@@ -133,23 +239,31 @@ export default function GameBoard({
     )
   }
 
-  const requestEngineAnalysis = async (
-    fen: string,
-    move: string,
-    turnNumber: number,
-    isWhite: boolean
-  ) => {
-    try {
+  // Classifies one move (either side's); the history badges stay hidden until the game ends.
+  const requestEngineAnalysis = async (move: Move) => {
+    const ply = plyFromFen(move.before)
+    const turnNumber = Math.floor(ply / 2) + 1
+    const isWhite = move.color === 'w'
 
+    try {
       const response = await fetch(`${API_BASE_URL}/engine-analysis`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fen: fen, move: move })
+        body: JSON.stringify({ fen: move.before, move: `${move.from}${move.to}${move.promotion ?? ''}` })
       })
 
       if (!response.ok) throw new Error(`HTTP error: ${response.status}`)
 
       const data = await response.json()
+
+      analysisByPlyRef.current.set(ply, {
+        ply,
+        san: move.san,
+        move_classification: data.move_classification,
+        move_delta: data.move_delta,
+        before_move_analysis: data.before_move_analysis,
+        after_move_analysis: data.after_move_analysis
+      })
 
       attachEngineAnalysis(
         turnNumber,
@@ -160,11 +274,18 @@ export default function GameBoard({
         data.after_move_analysis
       )
 
-      setSemanticAnalysisReady(true)
+      if (isUserPly(ply)) setSemanticAnalysisReady(true)
 
     } catch (err) {
       console.error('Classification error:', err)
     }
+  }
+
+  // Training game: each move is analysed while the game goes on, so the report only waits for the last ones.
+  const analyseInBackground = (move: Move) => {
+    const analysis = requestEngineAnalysis(move)
+    pendingAnalysesRef.current.add(analysis)
+    analysis.finally(() => pendingAnalysesRef.current.delete(analysis))
   }
 
   const requestEngineMove = async (currentFen: string) => {
@@ -174,16 +295,24 @@ export default function GameBoard({
       const response = await fetch(`${API_BASE_URL}/engine-move`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fen: currentFen })
+        body: JSON.stringify({ fen: currentFen, training: true })
       })
 
       if (!response.ok) throw new Error(`HTTP error: ${response.status}`)
 
       const data = await response.json()
 
+      // The player resigned while the engine was thinking.
+      if (finishedRef.current) return
+
+      // The engine went easy on the user's previous move: the report still counts it as an error.
+      if (data.grace_applied) {
+        lenientPliesRef.current.push(plyFromFen(currentFen) - 1)
+      }
+
       if (data.engine_move) {
         const engineMove = data.engine_move
-        const gameCopy = new Chess(gameRef.current.fen())
+        const gameCopy = cloneGame(gameRef.current)
         const move = gameCopy.move({
           from: engineMove.slice(0, 2) as Square,
           to: engineMove.slice(2, 4) as Square,
@@ -193,6 +322,7 @@ export default function GameBoard({
         if (move) {
           setGame(gameCopy)
           recordMove(move.san, gameCopy.fen())
+          analyseInBackground(move)
         }
       }
 
@@ -218,11 +348,14 @@ export default function GameBoard({
   }
 
   useEffect(() => {
+    // Guard: StrictMode runs effects twice in dev, which would request two opening engine moves.
+    if (isReview || gameStartedRef.current) return
+    gameStartedRef.current = true
     startGame()
   }, [])
 
   const onDrop = (sourceSquare: Square, targetSquare: Square): boolean => {
-    if (reviewMode) return false
+    if (reviewMode || gameFinished) return false
 
     const currentTurn: PlayerColor = game.turn() === 'w' ? 'white' : 'black'
 
@@ -230,11 +363,8 @@ export default function GameBoard({
       return false
     }
 
-    const fenBefore = game.fen()
-    const isWhite = game.turn() === 'w'
-
     try {
-      const gameCopy = new Chess(game.fen())
+      const gameCopy = cloneGame(game)
 
       const move = gameCopy.move({
         from: sourceSquare,
@@ -250,24 +380,8 @@ export default function GameBoard({
           'Aguarde a classificação técnica do lance antes de solicitar o feedback do treinador.'
         )
 
-      const { turnNumber } = recordMove(
-        move.san,
-        gameCopy.fen()
-      )
-
-      const moveUci = `${sourceSquare}${targetSquare}${move.promotion || ''}`
-
-      requestEngineAnalysis(
-        fenBefore,
-        moveUci,
-        turnNumber,
-        isWhite
-      )
-
-      lastMoveRef.current = {
-        fenBefore,
-        moveUci
-      }
+      recordMove(move.san, gameCopy.fen())
+      analyseInBackground(move)
 
       if (!gameCopy.isGameOver()) {
         requestEngineMove(gameCopy.fen())
@@ -281,7 +395,7 @@ export default function GameBoard({
     }
   }
 
-  const requestSemanticEvaluation = async (
+  const requestMoveEvaluation = async (
     targetTurnNumber?: number,
     targetIsWhite?: boolean,
     directPayload?: any
@@ -310,17 +424,20 @@ export default function GameBoard({
       }
 
       payload = {
-        before_move_analysis: moveData.beforeAnalysis,
-        after_move_analysis: moveData.afterAnalysis,
-        move_classification: moveData.classification,
-        move_delta: moveData.delta
+        move_analysis: {
+          before_move_analysis: moveData.beforeAnalysis,
+          after_move_analysis: moveData.afterAnalysis,
+          move_classification: moveData.classification,
+          move_delta: moveData.delta
+        },
+        mover: isWhiteMove === (userColor === 'white') ? 'user' : 'opponent'
       }
     }
 
     setLoadingAnalysis(true)
 
     try {
-      const response = await fetch(`${API_BASE_URL}/semantic-evaluation`, {
+      const response = await fetch(`${API_BASE_URL}/move-evaluation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...payload, ...llmConfig })
@@ -336,7 +453,7 @@ export default function GameBoard({
       setEvaluation(data?.evaluation || 'Avaliação semântica indisponível.')
 
     } catch (err) {
-      console.error('Semantic evaluation error:', err)
+      console.error('Move evaluation error:', err)
       setEvaluation('Não foi possível obter a análise no momento.')
 
     } finally {
@@ -344,15 +461,209 @@ export default function GameBoard({
     }
   }
 
-  const handleMoveClick = (fen: string) => {
+  // Deterministic part of the report: fast, shown as soon as the game's analyses are in.
+  const requestGameStats = async (finalGame: Chess, moves: MoveAnalysis[]): Promise<GameStats | null> => {
+    const userColorCode = userColor === 'white' ? 'w' : 'b'
+    const totalUserMoves = finalGame.history({ verbose: true }).filter(m => m.color === userColorCode).length
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/game-stats`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_color: userColor, pgn: finalGame.pgn(), moves, total_user_moves: totalUserMoves })
+      })
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok) {
+        setReportMessage(data?.detail ?? `Não foi possível calcular as estatísticas: erro HTTP ${response.status}`)
+        return null
+      }
+      return data.stats
+    } catch (err) {
+      console.error('Game stats error:', err)
+      setReportMessage('Não foi possível calcular as estatísticas no momento.')
+      return null
+    }
+  }
+
+  // The coach's narrative, written by the LLM from the stats. Also the "retry" action.
+  const requestCoachReport = async () => {
+    const context = reportContextRef.current
+    if (!context) return
+
+    setCoachReport({ text: null, error: null, loading: true })
+    try {
+      const response = await fetch(`${API_BASE_URL}/game-report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...context, ...llmConfig })
+      })
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok) {
+        const error = data?.detail ?? `Não foi possível gerar o relatório: erro HTTP ${response.status}`
+        setCoachReport({ text: null, error, loading: false })
+        return
+      }
+      setCoachReport({ text: data.report, error: null, loading: false })
+    } catch (err) {
+      console.error('Game report error:', err)
+      setCoachReport({ text: null, error: 'Não foi possível gerar o relatório no momento.', loading: false })
+    }
+  }
+
+  const submitReport = async (finalGame: Chess, result: string, termination: string, imported: boolean) => {
+    const moves = [...analysisByPlyRef.current.values()]
+      .filter(m => isUserPly(m.ply))
+      .sort((a, b) => a.ply - b.ply)
+
+    if (moves.length < MIN_MOVES_FOR_REPORT) {
+      setStatsLoading(false)
+      setReportMessage(
+        `Lances insuficientes para avaliar: são necessários pelo menos ${MIN_MOVES_FOR_REPORT} lances analisados.`
+      )
+      return
+    }
+
+    setStatsLoading(true)
+    const gameStats = await requestGameStats(finalGame, moves)
+    setStatsLoading(false)
+    if (!gameStats) return
+
+    setStats(gameStats)
+    reportContextRef.current = {
+      stats: gameStats,
+      result,
+      termination,
+      pgn: finalGame.pgn(),
+      lenient_plies: lenientPliesRef.current,
+      imported
+    }
+    await requestCoachReport()
+  }
+
+  // Classifies every move of one side that has no analysis yet, a few at a time.
+  // Imported games are analysed this way; training games only use it to retry failed analyses.
+  const analyseMoves = async (
+    targetGame: Chess,
+    side: 'user' | 'opponent',
+    onProgress?: (done: number, total: number) => void
+  ) => {
+    const queue: Move[] = targetGame
+      .history({ verbose: true })
+      .filter(move => {
+        const ply = plyFromFen(move.before)
+        return isUserPly(ply) === (side === 'user') && !analysisByPlyRef.current.has(ply)
+      })
+
+    const total = queue.length
+    let done = 0
+    onProgress?.(done, total)
+
+    const worker = async () => {
+      for (let move = queue.shift(); move; move = queue.shift()) {
+        await requestEngineAnalysis(move)
+        done += 1
+        onProgress?.(done, total)
+      }
+    }
+    await Promise.all(Array.from({ length: IMPORT_ANALYSIS_CONCURRENCY }, worker))
+  }
+
+  const analyseOpponentMoves = async (targetGame: Chess) => {
+    setOpponentAnalysing(true)
+    try {
+      await analyseMoves(targetGame, 'opponent')
+    } finally {
+      setOpponentAnalysing(false)
+    }
+  }
+
+  const finishGame = async (termination: string) => {
+    if (finishedRef.current) return
+    finishedRef.current = true
+
+    const finalGame = gameRef.current
+    const { result, label } = describeResult(finalGame, termination, userColor)
+    setGameFinished(true)
+    setResultLabel(label)
+    setIsEngineThinking(false)
+    setStatsLoading(true)
+
+    // Moves were analysed during the game: wait for the last ones, then retry any that failed.
+    // The badges appear now, with the stats, while the coach's report is generated.
+    await Promise.allSettled([...pendingAnalysesRef.current])
+    await analyseMoves(finalGame, 'user')
+
+    analyseOpponentMoves(finalGame)
+    await submitReport(finalGame, result, termination, false)
+  }
+
+  // Analyses every user move of an imported PGN, then builds the same report as a training game.
+  const analyseImportedGame = async () => {
+    const importedGame = gameRef.current
+    setReportMessage(null)
+
+    // The user's moves first: the report needs them. The opponent's follow, while the report is generated.
+    await analyseMoves(importedGame, 'user', (done, total) => setImportProgress({ done, total }))
+    setImportProgress(null)
+
+    analyseOpponentMoves(importedGame)
+    const termination = importedGame.isGameOver() ? detectTermination(importedGame) : 'imported game'
+    await submitReport(importedGame, importedGame.getHeaders().Result ?? '*', termination, true)
+  }
+
+  // A loaded game goes straight to analysis and the report.
+  useEffect(() => {
+    if (!isReview || autoAnalysisStartedRef.current) return
+    autoAnalysisStartedRef.current = true
+    analyseImportedGame()
+  }, [])
+
+  const handleResign = () => {
+    if (gameFinished) return
+    if (window.confirm('Encerrar a partida e ver o relatório?')) {
+      finishGame('resignation')
+    }
+  }
+
+  useEffect(() => {
+    if (game.isGameOver()) {
+      finishGame(detectTermination(game))
+    }
+  }, [game])
+
+  const handleMoveClick = (fen: string, turnNumber?: number, isWhite?: boolean) => {
     setReviewMode(true)
     setReviewFen(fen)
+    const next = turnNumber !== undefined && isWhite !== undefined ? { turnNumber, isWhite } : null
+    if (next?.turnNumber !== selectedMove?.turnNumber || next?.isWhite !== selectedMove?.isWhite) {
+      setEvaluation('') // the previous explanation was about another move
+    }
+    setSelectedMove(next)
   }
 
   const exitReviewMode = () => {
     setReviewMode(false)
     setReviewFen(null)
+    setSelectedMove(null)
   }
+
+  // After the game, selecting a move in the history brings the per-move coach into view.
+  useEffect(() => {
+    if (selectedMove && gameFinished) {
+      moveCoachRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [selectedMove, gameFinished])
+
+  // After the game, the coach explains the selected move (either side's), or the user's last move by default.
+  const selectedMoveData = selectedMove
+    ? moveHistory.find(r => r.turnNumber === selectedMove.turnNumber)?.[selectedMove.isWhite ? 'white' : 'black']
+    : undefined
+  const selectedMoveIsUsers = selectedMove ? selectedMove.isWhite === (userColor === 'white') : true
+  const canEvaluateSelected = selectedMove ? Boolean(selectedMoveData?.beforeAnalysis) : semanticAnalysisReady
+  const isSelected = (turnNumber: number, isWhite: boolean) =>
+    selectedMove?.turnNumber === turnNumber && selectedMove.isWhite === isWhite
 
   const displayFen = reviewMode && reviewFen ? reviewFen : game.fen()
 
@@ -365,6 +676,11 @@ export default function GameBoard({
         </button>
 
         <div className="top-actions">
+          {!gameFinished && (
+            <button className="outline-btn" onClick={handleResign}>
+              Encerrar partida
+            </button>
+          )}
           <button className="outline-btn" onClick={onNewGame}>
             Novo jogo
           </button>
@@ -374,7 +690,7 @@ export default function GameBoard({
         </div>
       </header>
 
-      <div className="game-layout">
+      <div className={`game-layout${gameFinished ? ' finished' : ''}`}>
         <aside className="history-panel">
           <div className="panel-title">
             <div>
@@ -387,8 +703,7 @@ export default function GameBoard({
             <button
               className="start-move"
               onClick={() => {
-                setReviewMode(true)
-                setReviewFen(new Chess().fen())
+                handleMoveClick(new Chess().fen())
               }}
             >
               JOGO INICIADO
@@ -400,16 +715,22 @@ export default function GameBoard({
                   {String(item.turnNumber).padStart(2, '0')}
                 </span>
 
-                <button onClick={() => handleMoveClick(item.white.fen)}>
+                <button
+                  className={isSelected(item.turnNumber, true) ? 'selected-move' : undefined}
+                  onClick={() => handleMoveClick(item.white.fen, item.turnNumber, true)}
+                >
                   <b>{item.white.san}</b>
-                  <MoveBadge classification={item.white.classification} />
+                  {gameFinished && <MoveBadge classification={item.white.classification} />}
                 </button>
 
-                <button onClick={() => item.black && handleMoveClick(item.black.fen)}>
+                <button
+                  className={isSelected(item.turnNumber, false) ? 'selected-move' : undefined}
+                  onClick={() => item.black && handleMoveClick(item.black.fen, item.turnNumber, false)}
+                >
                   {item.black && (
                     <>
                       <b>{item.black.san}</b>
-                      <MoveBadge classification={item.black.classification} />
+                      {gameFinished && <MoveBadge classification={item.black.classification} />}
                     </>
                   )}
                 </button>
@@ -422,15 +743,17 @@ export default function GameBoard({
           <div className="stage-head">
             <div>
               <span className="eyebrow small">
-                {reviewMode ? 'MODO DE REVISÃO' : 'ANÁLISE EM TEMPO REAL'}
+                {reviewMode ? 'MODO DE REVISÃO' : gameFinished ? 'PARTIDA ENCERRADA' : 'PARTIDA DE TREINO'}
               </span>
 
               <h1>
                 {reviewMode
                   ? 'Revendo posição'
-                  : game.turn() === (userColor === 'white' ? 'w' : 'b')
-                    ? 'Sua vez'
-                    : 'Oponente'}
+                  : gameFinished
+                    ? resultLabel
+                    : game.turn() === (userColor === 'white' ? 'w' : 'b')
+                      ? 'Sua vez'
+                      : 'Oponente'}
               </h1>
             </div>
           </div>
@@ -454,7 +777,7 @@ export default function GameBoard({
                 style={{ padding: '6px 12px', fontSize: '11px' }}
                 onClick={exitReviewMode}
               >
-                Voltar ao jogo
+                {gameFinished ? 'Posição final' : 'Voltar ao jogo'}
               </button>
             </div>
           )}
@@ -466,8 +789,8 @@ export default function GameBoard({
               </span>
 
               <div>
-                <b>Stockfish</b>
-                <small>Engine</small>
+                <b>{isReview ? importedName(game, userColor === 'white' ? 'Black' : 'White', 'Oponente') : 'Stockfish'}</b>
+                <small>{isReview ? 'Oponente' : 'Engine'}</small>
               </div>
             </div>
           </div>
@@ -526,7 +849,7 @@ export default function GameBoard({
               </span>
 
               <div>
-                <b>You</b>
+                <b>{isReview ? importedName(game, userColor === 'white' ? 'White' : 'Black', 'Você') : 'You'}</b>
                 <small>Jogador</small>
               </div>
             </div>
@@ -538,92 +861,91 @@ export default function GameBoard({
             <div className="bot-avatar">A</div>
 
             <div>
-              <b>Análise do Stockfish</b>
+              <b>{gameFinished ? 'Treinador' : 'Partida de treino'}</b>
 
               <span>
                 <span className="live-dot" />
-                {assistEnabled ? 'Assistência ativada' : 'Assistência desativada'}
+                {gameFinished ? 'Relatório e análise por lance' : 'Feedback oculto até o fim da partida'}
               </span>
             </div>
-
-            <button
-              onClick={() => setAssistEnabled(!assistEnabled)}
-              style={{
-                background: assistEnabled ? 'var(--gold)' : '#3a4038',
-                border: 'none',
-                borderRadius: '12px',
-                width: '44px',
-                height: '24px',
-                position: 'relative',
-                cursor: 'pointer',
-                transition: 'background 0.3s'
-              }}
-              aria-label={
-                assistEnabled
-                  ? 'Desativar assistência'
-                  : 'Ativar assistência'
-              }
-            >
-              <span style={{
-                position: 'absolute',
-                top: '2px',
-                left: assistEnabled ? '22px' : '2px',
-                width: '20px',
-                height: '20px',
-                background: assistEnabled ? '#1d211a' : '#8d958b',
-                borderRadius: '50%',
-                transition: 'left 0.3s'
-              }} />
-            </button>
           </div>
 
           <div className="chat-content">
-            {!assistEnabled && (
+            {!gameFinished && (
               <p className="message system">
-                Assistência desativada. Ative-a para receber feedback sobre seus lances.
+                Partida de treino em andamento. Jogue normalmente: o sistema está avaliando
+                seu nível. Os lances, a precisão e as recomendações aparecerão ao final da
+                partida (ou ao clicar em "Encerrar partida").
               </p>
             )}
 
-            {assistEnabled && !analysis && !loadingAnalysis && (
-              <p className="message system">
-                Faça um lance e solicite o feedback do treinador quando estiver pronto.
+            {importProgress && (
+              <p className="message system" style={{ color: '#d0af68' }}>
+                🔍 Analisando seus lances: {importProgress.done} de {importProgress.total}...
               </p>
             )}
 
-            {loadingAnalysis && (
-              <p
-                className="message system"
-                style={{ color: '#d0af68' }}
-              >
-                🤔 Analisando seu lance...
-              </p>
+            {gameFinished && !importProgress && (
+              <GameReport
+                result={resultLabel}
+                stats={stats}
+                statsLoading={statsLoading}
+                coach={coachReport}
+                message={reportMessage}
+                onSelectMoment={(fen, ply) => handleMoveClick(fen, Math.floor(ply / 2) + 1, ply % 2 === 0)}
+                onRetry={requestCoachReport}
+                onConfigureLLM={() => setLlmSettingsOpen(true)}
+              />
             )}
 
-            {analysis && assistEnabled && (
-              <div className="message markdown-body">
-                <ReactMarkdown>{analysis}</ReactMarkdown>
+            {gameFinished && (
+              <div className="move-coach" ref={moveCoachRef}>
+                <span className="eyebrow small">ANÁLISE POR LANCE</span>
+
+                <p className="move-coach-target">
+                  {selectedMove && selectedMoveData
+                    ? <>
+                        Lance selecionado: <b>{selectedMove.turnNumber}{selectedMove.isWhite ? '.' : '...'} {selectedMoveData.san}</b>
+                        {' '}({selectedMoveIsUsers ? 'seu' : 'do oponente'})
+                      </>
+                    : 'Selecione um lance no histórico (seu ou do oponente) para pedir a explicação do treinador.'}
+                </p>
+
+                <button
+                  className="outline-btn move-coach-btn"
+                  onClick={() => {
+                    requestMoveEvaluation(selectedMove?.turnNumber, selectedMove?.isWhite)
+                  }}
+                  disabled={loadingAnalysis || !canEvaluateSelected}
+                >
+                  {loadingAnalysis
+                    ? 'Analisando...'
+                    : !canEvaluateSelected
+                      ? selectedMove
+                        ? (opponentAnalysing ? 'Classificando lance...' : 'Lance sem classificação')
+                        : 'Selecione um lance'
+                      : selectedMove
+                        ? 'Avaliar lance selecionado'
+                        : 'Avaliar seu último lance'}
+                </button>
+
+                {opponentAnalysing && (
+                  <p className="message system">Classificando os lances do oponente...</p>
+                )}
+
+                {loadingAnalysis && (
+                  <p className="message system" style={{ color: '#d0af68' }}>
+                    🤔 Analisando o lance...
+                  </p>
+                )}
+
+                {analysis && !loadingAnalysis && (
+                  <div className="message markdown-body">
+                    <ReactMarkdown>{analysis}</ReactMarkdown>
+                  </div>
+                )}
               </div>
             )}
-          </div>
-
-          <div style={{ padding: '0 18px 18px' }}>
-            <button
-              className="outline-btn"
-              style={{
-                width: '100%',
-                justifyContent: 'center'
-              }}
-              onClick={() => {
-                requestSemanticEvaluation()
-              }}
-              disabled={loadingAnalysis || !semanticAnalysisReady}
-            >
-              {loadingAnalysis
-                ? 'Analisando...'
-                : semanticAnalysisReady
-                  ? 'Avaliar lance'
-                  : 'Avaliação não disponível'}
-            </button>
           </div>
         </aside>
       </div>

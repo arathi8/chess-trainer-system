@@ -1,4 +1,6 @@
-from typing import Optional
+import threading
+from contextlib import asynccontextmanager
+from typing import Any, Literal, Optional
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -11,11 +13,22 @@ from services.llm_service import (
     DEFAULT_PROVIDER,
     LLMError,
     LLMNotConfiguredError,
-    generate_evaluation,
+    generate_game_report,
+    generate_move_evaluation,
     get_provider_options,
 )
+from services.openings_service import identify_opening, load_openings
+from services.report_service import compute_game_stats
 
-app = FastAPI(title="Chess Trainer System API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Indexing the openings dataset takes seconds: do it in the background so the server starts
+    # at once and the first game report does not pay for it.
+    threading.Thread(target=load_openings, name="openings-preload", daemon=True).start()
+    yield
+
+
+app = FastAPI(title="Chess Trainer System API", lifespan=lifespan)
 
 # Enable CORS for Vite / React development server
 app.add_middleware(
@@ -29,9 +42,12 @@ app.add_middleware(
 # --- Request / Response Contracts ---
 class EngineMoveRequest(BaseModel):
     fen: str
+    # Training games make the engine lenient towards early mistakes
+    training: bool = False
 
 class EngineMoveResponse(BaseModel):
     engine_move: str
+    grace_applied: bool = False
 
 class EngineAnalysisRequest(BaseModel):
     fen: str  
@@ -43,19 +59,53 @@ class EngineAnalysisResponse(BaseModel):
     move_classification: str
     move_delta: float
 
-class SemanticEvaluationRequest(BaseModel):
-    before_move_analysis: dict
-    after_move_analysis: dict
-    move_classification: str
-    move_delta: float
+class MoveEvaluationRequest(BaseModel):
+    move_analysis: EngineAnalysisResponse
+    # Who played the evaluated move: the user or their opponent
+    mover: Literal["user", "opponent"] = "user"
     # BYOK settings; an omitted model or base_url falls back to the provider's default
     provider: str = DEFAULT_PROVIDER
     api_key: Optional[str] = None
     model: Optional[str] = None
     base_url: Optional[str] = None
 
-class SemanticEvaluationResponse(BaseModel):
+class MoveEvaluationResponse(BaseModel):
     evaluation: str
+
+class GameReportMove(BaseModel):
+    ply: int
+    san: str
+    move_classification: str
+    move_delta: float
+    before_move_analysis: dict
+    after_move_analysis: dict
+
+class GameStatsRequest(BaseModel):
+    user_color: str
+    pgn: str = ""
+    moves: list[GameReportMove]
+    total_user_moves: Optional[int] = None
+
+class GameStatsResponse(BaseModel):
+    stats: dict[str, Any]
+
+class GameReportRequest(BaseModel):
+    # As returned by /api/game-stats
+    stats: dict[str, Any]
+    result: str
+    termination: str
+    pgn: str = ""
+    lenient_plies: list[int] = []
+    # True for games imported from a PGN rather than played against the engine
+    imported: bool = False
+    # BYOK settings, as in MoveEvaluationRequest
+    provider: str = DEFAULT_PROVIDER
+    api_key: Optional[str] = None
+    model: Optional[str] = None
+    base_url: Optional[str] = None
+
+class GameReportResponse(BaseModel):
+    report: str
 
 class LLMProviderOption(BaseModel):
     label: str
@@ -73,11 +123,11 @@ class LLMProvidersResponse(BaseModel):
 @app.post("/api/engine-move", response_model=EngineMoveResponse)
 def engine_move(payload: EngineMoveRequest):
     """Calculates the best response move from Stockfish for the opponent."""
-    fen = payload.fen
-
     try:
-        engine_move = get_engine_move(fen)
-        return {"engine_move": engine_move}
+        engine_move, grace_applied = get_engine_move(payload.fen, training=payload.training)
+        return {"engine_move": engine_move, "grace_applied": grace_applied}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Stockfish engine error: {str(e)}")
 
@@ -108,14 +158,12 @@ def llm_providers():
     return get_provider_options()
 
 
-@app.post("/api/semantic-evaluation", response_model=SemanticEvaluationResponse)
-def evaluation_result(payload: SemanticEvaluationRequest):
+@app.post("/api/move-evaluation", response_model=MoveEvaluationResponse)
+def move_evaluation(payload: MoveEvaluationRequest):
     try:
-        evaluation = generate_evaluation(
-            before_analysis=payload.before_move_analysis,
-            after_analysis=payload.after_move_analysis,
-            classification=payload.move_classification,
-            win_loss_delta=payload.move_delta,
+        evaluation = generate_move_evaluation(
+            payload.move_analysis.model_dump(),
+            mover=payload.mover,
             provider=payload.provider,
             api_key=payload.api_key,
             model=payload.model,
@@ -128,7 +176,55 @@ def evaluation_result(payload: SemanticEvaluationRequest):
     except ValueError as e:
         raise HTTPException(status_code=500, detail=f"LLM configuration error: {e}")
 
-    return SemanticEvaluationResponse(evaluation=evaluation)
+    return MoveEvaluationResponse(evaluation=evaluation)
+
+@app.post("/api/game-stats", response_model=GameStatsResponse)
+def game_stats(payload: GameStatsRequest):
+    """Deterministic part of the post-game report: accuracy, classifications, phases, key moments and opening."""
+    moves = [move.model_dump() for move in payload.moves]
+    if not moves:
+        raise HTTPException(status_code=400, detail="No analysed moves to report on.")
+
+    try:
+        stats = compute_game_stats(moves, payload.user_color, payload.total_user_moves)
+    except (KeyError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"Invalid move data: {e}")
+
+    try:
+        stats["opening"] = identify_opening(payload.pgn, payload.user_color)
+    except ValueError:
+        stats["opening"] = None
+
+    return GameStatsResponse(stats=stats)
+
+
+@app.post("/api/game-report", response_model=GameReportResponse)
+def game_report(payload: GameReportRequest):
+    """The coach's post-game report, written by the LLM from the stats of /api/game-stats."""
+    try:
+        report = generate_game_report(
+            payload.stats,
+            result=payload.result,
+            termination=payload.termination,
+            pgn=payload.pgn,
+            lenient_plies=payload.lenient_plies,
+            imported=payload.imported,
+            provider=payload.provider,
+            api_key=payload.api_key,
+            model=payload.model,
+            base_url=payload.base_url,
+        )
+    except KeyError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid game stats: missing {e}")
+    except LLMNotConfiguredError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except LLMError as e:
+        raise HTTPException(status_code=502, detail=f"LLM provider error: {e}")
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=f"LLM configuration error: {e}")
+
+    return GameReportResponse(report=report)
+
 
 if __name__ == "__main__":
     uvicorn.run("chess_trainer_system_server:app", host="0.0.0.0", port=8000, reload=True)

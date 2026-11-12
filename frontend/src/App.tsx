@@ -4,6 +4,7 @@ import LandingPage from './components/LandingPage'
 import LoadPGNPage from './components/LoadPGNPage'
 import ColorSelector from './components/ColorSelector'
 import GameBoard from './components/GameBoard'
+import type { GameMode } from './components/GameBoard'
 import { loadLLMConfig, saveLLMConfig } from './llmConfig'
 import type { LLMConfig } from './llmConfig'
 
@@ -29,6 +30,7 @@ function App() {
   const [game, setGame] = useState<Chess>(new Chess())
   const [moveHistory, setMoveHistory] = useState<MoveRow[]>([])
   const [pendingPgn, setPendingPgn] = useState<string | null>(null)
+  const [gameMode, setGameMode] = useState<GameMode>('training')
   const [llmConfig, setLlmConfig] = useState<LLMConfig | null>(loadLLMConfig)
 
   const handleLLMConfigChange = (config: LLMConfig | null) => {
@@ -84,16 +86,19 @@ function App() {
         
         setGame(newGame)
         setMoveHistory(reconstructedHistory)
+        setGameMode('review')
       } catch (err) {
         console.error('Invalid PGN:', err)
         alert('PGN inválido. Iniciando jogo novo.')
         setGame(new Chess())
         setMoveHistory([])
+        setGameMode('training')
       }
       setPendingPgn(null)
     } else {
       setGame(new Chess())
       setMoveHistory([])
+      setGameMode('training')
     }
     
     setScreen('game')
@@ -126,6 +131,7 @@ function App() {
       
       {screen === 'color-selection' && (
         <ColorSelector 
+          importing={pendingPgn !== null}
           onSelectColor={handleColorSelected}
           onCancel={handleCancelColorSelection}
         />
@@ -136,6 +142,7 @@ function App() {
           initialGame={game}
           initialHistory={moveHistory}
           userColor={userColor}
+          mode={gameMode}
           llmConfig={llmConfig}
           onLLMConfigChange={handleLLMConfigChange}
           onNewGame={handleNewGame}

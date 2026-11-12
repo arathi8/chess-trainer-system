@@ -95,25 +95,18 @@ def run_analysis_via_api(fen: str, move: str, output_file: str = None) -> None:
         engine_data = engine_resp.json()
 
         print("🧠 Generating the trainer prompt...")
-        semantic_payload = {
-            "before_move_analysis": engine_data["before_move_analysis"],
-            "after_move_analysis": engine_data["after_move_analysis"],
-            "move_classification": engine_data.get("move_classification"),
-            "move_delta": engine_data.get("move_delta", 0.0)
-        }
-        
-        semantic_resp = requests.post(
-            f"{API_BASE_URL}/semantic-evaluation",
-            json=semantic_payload
+        evaluation_resp = requests.post(
+            f"{API_BASE_URL}/move-evaluation",
+            json={"move_analysis": engine_data}
         )
-        semantic_resp.raise_for_status()
-        semantic_data = semantic_resp.json()
+        evaluation_resp.raise_for_status()
+        evaluation_data = evaluation_resp.json()
 
         print("\n✅ Completed!\n")
-        print(semantic_data)
+        print(evaluation_data)
 
         if output_file:
-            write_output_file(output_file, str(semantic_data))
+            write_output_file(output_file, str(evaluation_data))
             print(f"📁 Saved to: {output_file}\n")
 
     except requests.exceptions.RequestException as e:

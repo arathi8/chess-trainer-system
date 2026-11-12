@@ -88,9 +88,9 @@ export default function LoadPGNPage({ onPGNLoaded, onBack }: LoadPGNPageProps) {
         <div className="upload-icon">
           <FileUp />
         </div>
-        <span className="eyebrow small">CONTINUAR PARTIDA</span>
+        <span className="eyebrow small">ANALISAR PARTIDA</span>
         <h1>Carregue seu PGN</h1>
-        <p>Cole a notação da sua partida abaixo ou faça upload de um arquivo para continuar a análise.</p>
+        <p>Cole a notação da sua partida abaixo ou faça upload de um arquivo para analisar seus lances.</p>
         
         {/* Upload de arquivo */}
         <div style={{ marginBottom: '12px' }}>
@@ -139,7 +139,7 @@ export default function LoadPGNPage({ onPGNLoaded, onBack }: LoadPGNPageProps) {
           onClick={handleLoadPgn}
           style={{ marginTop: '12px' }}
         >
-          <ArrowRight /> Carregar e jogar
+          <ArrowRight /> Carregar e analisar
         </button>
         <button className="back-link" onClick={onBack}>
           <ArrowLeft size={15} /> Voltar ao início

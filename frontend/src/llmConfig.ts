@@ -14,7 +14,7 @@ export interface LLMProviderCatalog {
   providers: Record<string, LLMProviderOption>
 }
 
-// Field names match the BYOK fields of the /semantic-evaluation request.
+// Field names match the BYOK fields of the /move-evaluation and /game-report requests.
 export interface LLMConfig {
   provider: string
   api_key: string

@@ -133,6 +133,21 @@ Diferença em relação ao plano original: o cliente de API ficou em `frontend/s
 - Entrada pelo fim da linha ou pela saída da teoria confirmada.
 - Alterna o usuário com `POST /api/engine-move` (`training: true`); classifica os lances do usuário em segundo plano com `/api/engine-analysis` (*fire-and-track*, como no `GameBoard`). Ao encerrar: resultado e precisão média. Integração com `/api/game-stats` fica para depois.
 
+### Melhoria — Progresso por variante ✅ (commit `beca22e`)
+
+**Motivo:** treinando a Najdorf, o drill explorava as subvariantes, mas só mostrava "X de N linhas"; não dava para saber quais tinham sido concluídas.
+
+**Como ficou:**
+
+- **Painel "Progresso"** no lado direito (todas as fases depois da apresentação), recolhível: barra e porcentagem geral, e as linhas **agrupadas um nível abaixo da abertura treinada**. Para uma família, os grupos são as variantes (Siciliana → Najdorf, Dragon…); para uma variante, as subvariantes (Najdorf → English Attack, Opocensky…).
+- Cada grupo mostra concluídas/total e porcentagem. Cada linha mostra ✓/○, o nome mais específico (ex.: "Anti-English" dentro de "English Attack") e os lances a partir de onde ela se separa da linha de referência (ex.: `6. Be3 e5 7. Nb3 Be6 8. f3`).
+- **Clicar numa linha treina essa linha:** o oponente a reproduz e a dica aponta para ela. O painel do drill mostra "Treinando a linha …".
+- Os grupos começam abertos quando são poucos (até 20, como numa variante) e recolhidos quando são muitos (família inteira: a Siciliana tem 78 grupos e 259 linhas).
+- O cabeçalho do painel também mostra a porcentagem.
+- Lógica pura em `drill.ts`: `listLines`, `groupLines`, `subOpeningName` (o mesmo critério de `sub_opening_name` no backend). `formatMoves` foi para `chess/utils.ts`.
+
+**Observação sobre os dados:** na Najdorf, a base do Lichess tem 23 fins de linha em 17 grupos, quase todos com 1 linha; só "English Attack" (5) e "Opocensky" (3) têm várias. É a granularidade do dataset, não um problema de agrupamento.
+
 ### Fase 6 — Documentação ✅
 
 Documentos sincronizados com o `0eedac7`; a feature saiu de "em desenvolvimento" e o `CLAUDE.md` passou a citar os três modos.

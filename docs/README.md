@@ -5,12 +5,12 @@ Documentação técnica do estado atual do projeto, extraída diretamente da lei
 | Sincronização | |
 |---|---|
 | Branch | `feat/learn-repertoire` (criada a partir da `develop`, que já contém a `feat/training-game`) |
-| Último commit coberto | `0eedac7` — *feat: let the coach present the opening and explain theory moves* |
+| Último commit coberto | `beca22e` — *feat: show repertoire progress per variation and train a chosen line* |
 | Data | 2026-11-11 |
 | Alterações não commitadas consideradas | nenhuma |
 | Situação | Modo **Aprender repertório** implementado (todas as fases); falta o teste manual no navegador antes do PR — ver [07-modo-repertorio.md](07-modo-repertorio.md) |
 
-Para saber o que mudou no código desde esta documentação: `git log --oneline 0eedac7..HEAD` e `git diff 0eedac7 HEAD --stat`.
+Para saber o que mudou no código desde esta documentação: `git log --oneline beca22e..HEAD` e `git diff beca22e HEAD --stat`.
 
 ## Princípio central
 

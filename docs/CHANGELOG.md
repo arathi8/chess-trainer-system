@@ -2,6 +2,12 @@
 
 Cada entrada registra uma sincronização desta pasta com o código. A mais recente fica no topo.
 
+## 2026-11-11 — sincronizado até `beca22e` (branch `feat/learn-repertoire`)
+
+| Commit | Mudança no código | Documentos atualizados |
+|---|---|---|
+| `beca22e` feat: show repertoire progress per variation and train a chosen line | Painel de progresso (geral e por variante/subvariante, linhas concluídas e pendentes) e treino de uma linha escolhida | README, 01 (F15), 06 (mapa), 07 (nova seção "Progresso por variante"), HTML |
+
 ## 2026-11-11 — sincronizado até `0eedac7` (branch `feat/learn-repertoire`)
 
 | Commit | Mudança no código | Documentos atualizados |

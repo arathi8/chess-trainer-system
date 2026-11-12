@@ -188,7 +188,8 @@ Fluxo completo:
 4. **Confirmação ao sair da teoria**, com a avaliação do Stockfish do lance.
 5. **Partida contra o Stockfish** depois da teoria, com a precisão dos lances fora dela.
 6. **"Por que esse lance?"**: explicação da LLM de qualquer lance teórico da linha, seu ou do oponente.
-7. **Resumo da sessão**.
+7. **Progresso por variante**: porcentagem geral e por variante/subvariante, lista de linhas concluídas e pendentes, e um clique para treinar uma linha específica.
+8. **Resumo da sessão**.
 
 Detalhes de implementação em [07-modo-repertorio.md](07-modo-repertorio.md).
 

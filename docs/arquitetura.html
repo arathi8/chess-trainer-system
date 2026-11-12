@@ -91,7 +91,7 @@
 <header>
   <span class="eyebrow">MC857A · Documentação técnica</span>
   <h1>Chess Trainer System — Arquitetura</h1>
-  <p class="lead">Visão visual do estado atual do projeto (branch <code>feat/learn-repertoire</code>, sincronizada com o commit <code>7bcd979</code> em 2026-11-11). O texto completo está nos arquivos Markdown desta pasta; esta página reúne os diagramas renderizados.</p>
+  <p class="lead">Visão visual do estado atual do projeto (branch <code>feat/learn-repertoire</code>, sincronizada com o commit <code>0eedac7</code> em 2026-11-11). O texto completo está nos arquivos Markdown desta pasta; esta página reúne os diagramas renderizados.</p>
   <nav>
     <a href="#principio">Princípio</a>
     <a href="#contexto">Contexto</a>
@@ -132,7 +132,7 @@
     <div class="card"><h4>engine_service</h4><p>Localiza o Stockfish, escolhe o lance do motor (normal, leniente, variado), analisa antes/depois e classifica pela perda de Win%.</p></div>
     <div class="card"><h4>report_service</h4><p>Funções puras: precisão (fórmula Lichess), fases, temas táticos, momentos-chave e prompt do relatório.</p></div>
     <div class="card"><h4>openings_service</h4><p>Indexa <code>openings.tsv</code> uma vez (pré-carga em <em>thread</em> na inicialização, protegida por <em>lock</em>), identifica a abertura e onde e por quem a partida saiu da teoria.</p></div>
-    <div class="card"><h4>repertoire_service</h4><p>Modo repertório (em desenvolvimento): catálogo família → variante com cor sugerida e árvore de teoria da abertura escolhida.</p></div>
+    <div class="card"><h4>repertoire_service</h4><p>Modo repertório: catálogo família → variante com cor sugerida, árvore de teoria e o contexto de teoria usado nos prompts da LLM.</p></div>
     <div class="card"><h4>llm_service</h4><p>Catálogo BYOK, cliente compatível com OpenAI (Gemini por padrão), modo somente prompt e prompt de avaliação de lance.</p></div>
     <div class="card"><h4>GameBoard.tsx</h4><p>Orquestrador do frontend: tabuleiro, turnos, chamadas à API, fila de análise, relatório e análise por lance.</p></div>
     <div class="card"><h4>App.tsx</h4><p>Máquina de telas e estado global (cor, modo, partida inicial, configuração da LLM).</p></div>
@@ -153,6 +153,8 @@
       <tr><td><code>POST /api/game-report</code></td><td>stats, resultado, término, pgn, lenient_plies, imported, BYOK</td><td>report (Markdown); erros 400/502</td><td>1 chamada LLM</td></tr>
       <tr><td><code>GET /api/repertoire/catalog</code></td><td>—</td><td>famílias → variantes, ECO, linha de referência, cor sugerida</td><td>só CPU</td></tr>
       <tr><td><code>GET /api/repertoire/tree?name=</code></td><td>nome da abertura</td><td>árvore de teoria (nós recursivos); 404 se não existir</td><td>só CPU</td></tr>
+      <tr><td><code>POST /api/repertoire/intro</code></td><td>nome, cor, BYOK</td><td>apresentação da abertura (Markdown, pt-BR)</td><td>1 busca + 1 chamada LLM</td></tr>
+      <tr><td><code>POST /api/repertoire/explain-move</code></td><td>nome, cor, lances (UCI), BYOK</td><td>por que a teoria joga o lance (Markdown, pt-BR)</td><td>2 buscas + 1 chamada LLM</td></tr>
     </tbody>
   </table>
   </div>

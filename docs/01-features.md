@@ -176,11 +176,21 @@ Indexar `openings.tsv` leva ~5 s. Desde `5ceeb35`, o servidor faz isso em uma *t
 
 `find_stockfish` procura, nesta ordem: variável `STOCKFISH_PATH` → binários dentro de `backend/stockfish/` → `/usr/games/stockfish` → `stockfish` no `PATH`.
 
-## F15. Aprender repertório *(em desenvolvimento)*
+## F15. Aprender repertório
 
 Novo modo de jogo para estudar uma abertura ou defesa do catálogo Lichess: drill das linhas teóricas no tabuleiro e, ao fim da linha (ou se o jogador confirmar que quer sair da teoria), partida contra o Stockfish a partir da posição. Plano completo e status por fase em [07-modo-repertorio.md](07-modo-repertorio.md).
 
-Já funciona no navegador: escolha da abertura e da cor, drill das linhas com dica e seta, confirmação ao sair da teoria (com a avaliação do Stockfish), partida contra o Stockfish depois da teoria com a precisão dos lances fora dela, e resumo da sessão. Falta a LLM (apresentação da abertura e "por que esse lance?").
+Fluxo completo:
+
+1. **Escolha** da abertura (família ou variante) e da cor.
+2. **Apresentação pelo treinador (LLM)**: ideia, planos para o lado do aluno, estrutura de peões, cuidados e como treinar, ancorada na linha de referência, nas principais variantes e na avaliação do Stockfish. É opcional e continua disponível durante o treino.
+3. **Drill** das linhas, com dica e seta.
+4. **Confirmação ao sair da teoria**, com a avaliação do Stockfish do lance.
+5. **Partida contra o Stockfish** depois da teoria, com a precisão dos lances fora dela.
+6. **"Por que esse lance?"**: explicação da LLM de qualquer lance teórico da linha, seu ou do oponente.
+7. **Resumo da sessão**.
+
+Detalhes de implementação em [07-modo-repertorio.md](07-modo-repertorio.md).
 
 Backend (Fase 1, commit `a719b4c`), em [repertoire_service.py](../backend/services/repertoire_service.py):
 
@@ -189,4 +199,4 @@ Backend (Fase 1, commit `a719b4c`), em [repertoire_service.py](../backend/servic
 
 ## F14. Testes automatizados
 
-[test_training_game.py](../backend/tests/test_training_game.py) (pytest) cobre: limites da precisão, detecção de fase, temas táticos, estatísticas e prompt do relatório, modo leniente, variedade de lances, identificação de abertura, prompt de lance do oponente e os endpoints `/game-stats` (estatísticas, abertura, 400 sem lances) e `/game-report` (modo somente prompt, 400 sem chave, 400 com estatísticas incompletas). [test_repertoire.py](../backend/tests/test_repertoire.py) cobre o catálogo (cores sugeridas, variantes), a árvore (linha da Najdorf, ordem por popularidade, folhas nomeadas) e os endpoints de repertório (incluindo 404). A maioria usa análises sintéticas (sem motor); os que precisam do Stockfish real são marcados com `@needs_stockfish` e pulados quando ele não está instalado.
+[test_training_game.py](../backend/tests/test_training_game.py) (pytest) cobre: limites da precisão, detecção de fase, temas táticos, estatísticas e prompt do relatório, modo leniente, variedade de lances, identificação de abertura, prompt de lance do oponente e os endpoints `/game-stats` (estatísticas, abertura, 400 sem lances) e `/game-report` (modo somente prompt, 400 sem chave, 400 com estatísticas incompletas). [test_repertoire.py](../backend/tests/test_repertoire.py) cobre o catálogo (cores sugeridas, variantes), a árvore (linha da Najdorf, ordem por popularidade, folhas nomeadas), os endpoints de repertório (incluindo 404), o resumo da abertura, o contexto de um lance teórico e os prompts de apresentação e de explicação, com o Stockfish substituído por análises fixas. A maioria usa análises sintéticas (sem motor); os que precisam do Stockfish real são marcados com `@needs_stockfish` e pulados quando ele não está instalado.

@@ -1,6 +1,6 @@
-# 07 — Modo "Aprender repertório" (em desenvolvimento)
+# 07 — Modo "Aprender repertório"
 
-Plano aprovado e status da feature na branch `feat/learn-repertoire`. Atualize a tabela de status a cada fase concluída.
+Plano aprovado, status e decisões de implementação da feature na branch `feat/learn-repertoire`. Todas as fases estão implementadas; falta o **teste manual completo no navegador** (roteiro em "Verificação ao final").
 
 ## Status
 
@@ -9,9 +9,9 @@ Plano aprovado e status da feature na branch `feat/learn-repertoire`. Atualize a
 | 1 | Backend: catálogo e árvore de teoria | ✅ concluída | `a719b4c` |
 | 2 | Frontend: botão na tela inicial, escolha do repertório, cliente de API tipado | ✅ concluída | `49cd306` |
 | 3 | Drill no frontend (inclui confirmação ao sair da teoria) | ✅ concluída | `c86cf8e` |
-| 4 | LLM: apresentação da abertura e "por que esse lance?" | ⏳ próxima | — |
+| 4 | LLM: apresentação da abertura e "por que esse lance?" | ✅ concluída | `0eedac7` |
 | 5 | Partida contra o Stockfish a partir da posição (playout) | ✅ concluída (adiantada) | `7bcd979` |
-| 6 | Documentação final | pendente | — |
+| 6 | Documentação final | ✅ concluída | commit de docs seguinte ao `0eedac7` |
 
 ## Objetivo e decisões de produto
 
@@ -89,7 +89,24 @@ Diferença em relação ao plano original: o cliente de API ficou em `frontend/s
 - `RepertoireTrainer.tsx`: estados `intro → drill → line-complete → playout → summary`; modal de confirmação ao sair da teoria (reaproveita `Modal`); dica com `squareStyles` e depois seta com `arrows` do `react-chessboard`; opcionalmente mostra no modal a avaliação do Stockfish do lance jogado vs. o teórico (`/api/engine-analysis`); painel com o nome da variante atual e a lista de lances; resumo determinístico (linhas concluídas, acertos de primeira, lances com mais erros, ponto de saída da teoria).
 - Mover `cloneGame` e `plyFromFen` de `GameBoard.tsx` para `frontend/src/chess/utils.ts`.
 
-### Fase 4 — LLM
+### Fase 4 — LLM ✅
+
+**Como ficou implementado** (commit `0eedac7`):
+
+- **Backend:**
+  - `repertoire_service.opening_overview(name)`: linha de referência, FEN final e as 5 sub-aberturas com mais linhas, um nível abaixo (família → variantes; variante → subvariantes), cada uma com sua linha mais curta.
+  - `repertoire_service.theory_move_context(name, ucis)`: posição antes do lance, o lance, as alternativas teóricas, as respostas teóricas depois dele, a variante na altura do lance e quem jogou. Levanta `NotInTheoryError` se a sequência sair da árvore.
+  - `engine_service.get_position_analysis(fen)`: avaliação de uma posição isolada, no mesmo formato das metades do `get_move_analysis`.
+  - `llm_service.generate_opening_intro` / `generate_theory_move_explanation`, com os prompts `generate_opening_intro_prompt` / `generate_theory_move_prompt`. São **em português**, com persona de treinador no próprio prompt (`REPERTOIRE_COACH`), proibição de inventar lances fora dos dados e limite de tamanho (300 / 150 palavras). O `SYSTEM_PROMPT` compartilhado não foi alterado.
+  - Rotas `POST /api/repertoire/intro` e `POST /api/repertoire/explain-move`. Se o Stockfish falhar, o prompt segue sem a avaliação e instrui a LLM a não citar números.
+- **Frontend** ([RepertoireTrainer.tsx](../frontend/src/components/RepertoireTrainer.tsx)):
+  - Nova fase inicial `intro`: o tabuleiro mostra a posição da linha de referência. A apresentação é pedida automaticamente se houver LLM configurada; senão aparece "Configurar LLM". Dá para pular. Durante o drill, a apresentação fica num bloco recolhível.
+  - Qualquer lance da teoria na lista de lances (os do caminho atual, inclusive durante a partida fora da teoria) pode ser selecionado. O painel **Por que esse lance?** pede a explicação, guardada em cache por sequência de lances na sessão.
+  - Botão "Configurar LLM" na barra superior, usando o mesmo `LLMSettings` do resto do app.
+  - O pedido automático acontece no carregamento da árvore e ao salvar a configuração, não num efeito, para seguir a regra `react-hooks/set-state-in-effect`. Uma flag `active` impede o pedido em dobro do `StrictMode`.
+- **Testes:** `test_repertoire.py` substitui o Stockfish por análises fixas (`monkeypatch` em `chess_trainer_system_server`) e verifica os prompts (português, ECO, linha, avaliação, "aluno" × "oponente") e os erros (400 sem chave, 404 abertura desconhecida, 400 lance fora da teoria). Total do backend: 33 testes.
+
+**Plano original da fase:**
 
 - `POST /api/repertoire/intro` → `generate_opening_intro` em `llm_service.py`. Dados: ECO, nome, cor do aluno, linha de referência, 3–5 variantes mais populares da árvore, avaliação do Stockfish da posição final da linha. Pede ideias, planos, estrutura de peões, armadilhas.
 - `POST /api/repertoire/explain-move` → `generate_theory_move_explanation`. Dados: linha até o lance, o lance, alternativas teóricas naquele ponto, nome da variante e `get_move_analysis(fen, move)` formatado com `format_analysis_block`.
@@ -116,9 +133,9 @@ Diferença em relação ao plano original: o cliente de API ficou em `frontend/s
 - Entrada pelo fim da linha ou pela saída da teoria confirmada.
 - Alterna o usuário com `POST /api/engine-move` (`training: true`); classifica os lances do usuário em segundo plano com `/api/engine-analysis` (*fire-and-track*, como no `GameBoard`). Ao encerrar: resultado e precisão média. Integração com `/api/game-stats` fica para depois.
 
-### Fase 6 — Documentação
+### Fase 6 — Documentação ✅
 
-Seguir [06-guia-para-ia.md §6.7](06-guia-para-ia.md), mover a feature de "em desenvolvimento" para estável e atualizar o `CLAUDE.md`.
+Documentos sincronizados com o `0eedac7`; a feature saiu de "em desenvolvimento" e o `CLAUDE.md` passou a citar os três modos.
 
 ## Fora do MVP
 

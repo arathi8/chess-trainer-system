@@ -2,6 +2,14 @@
 
 Cada entrada registra uma sincronização desta pasta com o código. A mais recente fica no topo.
 
+## 2026-11-11 — sincronizado até `0eedac7` (branch `feat/learn-repertoire`)
+
+| Commit | Mudança no código | Documentos atualizados |
+|---|---|---|
+| `0eedac7` feat: let the coach present the opening and explain theory moves | `POST /api/repertoire/intro` e `/explain-move`; `opening_overview`, `theory_move_context`, `get_position_analysis`; prompts em português; fase `intro` e painel "Por que esse lance?" no frontend; testes com o Stockfish substituído | README, 01 (F15, testes), 02 (API, módulos, componentes), 03 (sequência do explain-move), 05 (D1), 06 (mapa, convenções), 07 (Fases 4 e 6), HTML, `CLAUDE.md` |
+
+Com isso o modo repertório está completo (Fase 6); falta só o teste manual no navegador.
+
 ## 2026-11-11 — sincronizado até `7bcd979` (branch `feat/learn-repertoire`)
 
 | Commit | Mudança no código | Documentos atualizados |

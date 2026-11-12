@@ -258,6 +258,29 @@ sequenceDiagram
     API-->>RT: precisão + contagens
 ```
 
+"Por que esse lance?" (qualquer lance teórico da linha) e a apresentação da abertura seguem o mesmo padrão ancorado:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as Jogador
+    participant RT as RepertoireTrainer
+    participant API as FastAPI
+    participant RS as repertoire_service
+    participant ES as engine_service
+    participant LS as llm_service
+
+    U->>RT: seleciona um lance da teoria → "Por que esse lance?"
+    RT->>API: POST /repertoire/explain-move {name, color, moves (UCIs), BYOK}
+    API->>RS: theory_move_context(name, moves)
+    RS-->>API: posição antes, alternativas, respostas teóricas, variante
+    API->>ES: get_move_analysis(fen antes, lance)
+    API->>LS: generate_theory_move_explanation (prompt em português)
+    LS-->>API: explicação (ou prompt, no modo somente prompt)
+    API-->>RT: {explanation}
+    RT-->>U: Markdown no painel (guardado em cache na sessão)
+```
+
 ## 3.8 Decisão do lance do motor
 
 ```mermaid

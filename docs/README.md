@@ -5,12 +5,12 @@ Documentação técnica do estado atual do projeto, extraída diretamente da lei
 | Sincronização | |
 |---|---|
 | Branch | `feat/learn-repertoire` (criada a partir da `develop`, que já contém a `feat/training-game`) |
-| Último commit coberto | `7bcd979` — *feat: play on against Stockfish when the repertoire line ends* |
+| Último commit coberto | `0eedac7` — *feat: let the coach present the opening and explain theory moves* |
 | Data | 2026-11-11 |
 | Alterações não commitadas consideradas | nenhuma |
-| Trabalho em andamento | Modo **Aprender repertório** — Fases 1, 2, 3 e 5 de 6 concluídas (a 5 foi adiantada); falta a 4 (LLM); ver [07-modo-repertorio.md](07-modo-repertorio.md) |
+| Situação | Modo **Aprender repertório** implementado (todas as fases); falta o teste manual no navegador antes do PR — ver [07-modo-repertorio.md](07-modo-repertorio.md) |
 
-Para saber o que mudou no código desde esta documentação: `git log --oneline 7bcd979..HEAD` e `git diff 7bcd979 HEAD --stat`.
+Para saber o que mudou no código desde esta documentação: `git log --oneline 0eedac7..HEAD` e `git diff 0eedac7 HEAD --stat`.
 
 ## Princípio central
 
@@ -39,7 +39,7 @@ flowchart LR
 | [05-observacoes-tecnicas.md](05-observacoes-tecnicas.md) | Débitos técnicos, inconsistências e pontos de atenção antes de evoluir |
 | [arquitetura.html](arquitetura.html) | Versão visual (abre no navegador) com todos os diagramas renderizados |
 | [06-guia-para-ia.md](06-guia-para-ia.md) | Contexto condensado, invariantes e convenções para assistentes de IA trabalharem no projeto |
-| [07-modo-repertorio.md](07-modo-repertorio.md) | Plano e status do modo "Aprender repertório" (feature em desenvolvimento) |
+| [07-modo-repertorio.md](07-modo-repertorio.md) | Plano, decisões e implementação do modo "Aprender repertório" |
 | [CHANGELOG.md](CHANGELOG.md) | Registro de cada sincronização da documentação com o código |
 
 Os diagramas estão em [Mermaid](https://mermaid.js.org/): renderizam no GitHub, no VS Code (extensão *Markdown Preview Mermaid Support*) e no [arquitetura.html](arquitetura.html).
@@ -49,7 +49,7 @@ Os diagramas estão em [Mermaid](https://mermaid.js.org/): renderizam no GitHub,
 | Camada | Tecnologia | Responsabilidade |
 |---|---|---|
 | Frontend (SPA) | React 19 + TypeScript + Vite, `chess.js`, `react-chessboard`, `react-markdown` | Tabuleiro interativo, validação local de lances, orquestração das chamadas, exibição do relatório |
-| API | FastAPI + Pydantic (`backend/chess_trainer_system_server.py`) | 8 endpoints REST, contratos de entrada/saída, tradução de erros em HTTP, pré-carga das aberturas na inicialização |
+| API | FastAPI + Pydantic (`backend/chess_trainer_system_server.py`) | 10 endpoints REST, contratos de entrada/saída, tradução de erros em HTTP, pré-carga das aberturas na inicialização |
 | Serviços | Python (`backend/services/`) | `engine_service` (Stockfish), `report_service` (estatísticas + prompt do relatório), `openings_service` (teoria), `repertoire_service` (catálogo e árvore de repertório), `llm_service` (provedores LLM) |
 | Motor | Stockfish via protocolo UCI (`python-chess`) | Jogar e avaliar posições (profundidade 20) |
 | LLM | Qualquer API compatível com OpenAI (Gemini configurado por padrão) — chave do próprio usuário (BYOK) | Explicação de lance e relatório pós-partida |
@@ -59,5 +59,5 @@ Pontos de entrada:
 
 - **Novo jogo** → partida de treino contra o Stockfish, todos os lances analisados durante o jogo mas com feedback oculto até o fim → estatísticas imediatas + narrativa do treinador.
 - **Carregar PGN** → importação de partida → análise automática de todos os lances → relatório.
-- **Aprender repertório** *(em desenvolvimento)* → escolher abertura/defesa do catálogo Lichess → drill das linhas teóricas → partida contra o Stockfish a partir da posição. Hoje funcionam a escolha da abertura, o drill (com confirmação ao sair da teoria), a partida contra o Stockfish depois da teoria e o resumo; falta a LLM.
+- **Aprender repertório** → escolher abertura/defesa do catálogo Lichess → apresentação pelo treinador (LLM) → drill das linhas teóricas (com confirmação ao sair da teoria e "por que esse lance?") → partida contra o Stockfish a partir da posição → resumo da sessão.
 - **CLI** (`backend/chess_trainer_system_cli.py`) → avaliação de um lance (FEN + UCI) via API, interativa ou por arquivos.

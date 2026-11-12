@@ -6,7 +6,7 @@ Pontos encontrados durante a análise que valem considerar antes das próximas a
 
 | # | Observação | Onde | Impacto |
 |---|---|---|---|
-| D1 | O prompt do relatório pede explicitamente **"Write a post-game report in English"**, mas toda a interface está em português. O prompt de lance não define idioma (a resposta tende a seguir o inglês do prompt) | `generate_report_prompt`, `generate_prompt` | Alto para o público-alvo |
+| D1 | O prompt do relatório pede explicitamente **"Write a post-game report in English"**, mas toda a interface está em português. O prompt de lance não define idioma (a resposta tende a seguir o inglês do prompt). Os prompts do modo repertório já são em português (`REPERTOIRE_COACH`) e podem servir de modelo para corrigir os outros | `generate_report_prompt`, `generate_prompt` | Alto para o público-alvo |
 | D2 | O `SYSTEM_PROMPT` é genérico ("chess expert assistant"). Não define persona de professor, nível do aluno, tom, tamanho ou formato | [llm_service.py:7](../backend/services/llm_service.py#L7) | Médio — é a principal alavanca de didática |
 | D3 | A explicação de lance recebe avaliação e linhas, mas **não** recebe os temas táticos (`error_tags`), a fase do jogo nem a abertura, que já são calculados para o relatório | `generate_prompt` vs. `report_service.error_tags` | Médio — a LLM tem menos fatos concretos para ancorar a explicação |
 | D4 | Durante a partida de treino não há nenhum feedback; o aprendizado acontece só no fim. É uma decisão de produto consciente (avaliar o nível), mas o README ainda descreve "Avaliar lance" durante o jogo | [GameBoard.tsx](../frontend/src/components/GameBoard.tsx), [README.md](../README.md) | Documentação desatualizada |

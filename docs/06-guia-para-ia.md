@@ -7,7 +7,7 @@ Contexto condensado para uma sessão nova (Claude ou outra IA generativa) começ
 ## 6.1 O que é o projeto (em 5 linhas)
 
 - Treinador de xadrez web para a disciplina MC857A (UNICAMP, 2026/2). Frontend React + TypeScript, backend FastAPI + Python, Stockfish local via UCI, LLM via API compatível com OpenAI com chave do próprio usuário (BYOK).
-- Dois pontos de entrada: **Novo jogo** (partida de treino contra o Stockfish) e **Carregar PGN** (análise de partida importada). Um terceiro, **Aprender repertório**, está em desenvolvimento na branch `feat/learn-repertoire` — plano e status em [07-modo-repertorio.md](07-modo-repertorio.md).
+- Três pontos de entrada: **Novo jogo** (partida de treino contra o Stockfish), **Carregar PGN** (análise de partida importada) e **Aprender repertório** (drill de linhas teóricas do catálogo Lichess + partida a partir da posição + explicações da LLM; detalhes em [07-modo-repertorio.md](07-modo-repertorio.md)).
 - Ao fim, o jogador recebe estatísticas determinísticas (precisão, classificação dos lances, fases, temas táticos, abertura, momentos-chave) e um relatório escrito pela LLM; pode também pedir a explicação de qualquer lance, seu ou do oponente.
 - Interface em português; código, comentários, prompts e mensagens de commit em inglês.
 - Não há banco de dados nem sessão: todo o estado vive no navegador.
@@ -36,6 +36,7 @@ Contexto condensado para uma sessão nova (Claude ou outra IA generativa) começ
 | Mudar identificação de abertura | [openings_service.py](../backend/services/openings_service.py) | `identify_opening`, `book_moves_from`; dados em `backend/data/openings.tsv` |
 | Regras do drill de repertório (resposta do oponente, cobertura, dica) | [drill.ts](../frontend/src/repertoire/drill.ts) | `pickOpponentMove`, `hintMove`, `classifyUserMove` |
 | Tela de treino de repertório (fases, modal fora da teoria, resumo) | [RepertoireTrainer.tsx](../frontend/src/components/RepertoireTrainer.tsx) | `onDrop`, `advance`, `stayInTheory`, `leaveTheory`, `startLine` |
+| Textos da apresentação da abertura e do "por que esse lance?" | [llm_service.py](../backend/services/llm_service.py) | `REPERTOIRE_COACH`, `generate_opening_intro_prompt`, `generate_theory_move_prompt` (dados vêm de `opening_overview` / `theory_move_context`) |
 | Catálogo e árvore do modo repertório | [repertoire_service.py](../backend/services/repertoire_service.py) | `list_repertoire_catalog`, `build_repertoire_tree`, `belongs_to`, `side_of_last_move` |
 | Novo endpoint | [chess_trainer_system_server.py](../backend/chess_trainer_system_server.py) | DTO Pydantic + rota; lógica num serviço, não na rota |
 | Fluxo da partida, chamadas à API, fim de jogo | [GameBoard.tsx](../frontend/src/components/GameBoard.tsx) | `onDrop`, `requestEngineMove`, `requestEngineAnalysis`, `analyseInBackground`, `finishGame`, `analyseImportedGame`, `submitReport`, `requestGameStats`, `requestCoachReport`, `requestMoveEvaluation` |
@@ -75,7 +76,8 @@ Stockfish: `STOCKFISH_PATH`, ou binário em `backend/stockfish/`, ou no `PATH`. 
 - Commits no padrão *Conventional Commits*, em inglês e no imperativo: `feat:`, `fix:`, `perf:`, `refactor:`, `chore:`. Corpo explica o *porquê*. Commits feitos com ajuda do Claude terminam com `Co-Authored-By: Claude ...`.
 - Branches: `feat/<nome>`; integração em `develop`; principal `main`.
 - Textos de UI em português; identificadores, comentários, prompts e mensagens de log em inglês (exceção: algumas mensagens de erro de API ao usuário em português).
-- Backend: funções puras sempre que possível, constantes de ajuste em MAIÚSCULAS no topo do módulo, testes em `backend/tests/` com análises sintéticas (sem motor) e `@needs_stockfish` para os que precisam do motor.
+- Backend: funções puras sempre que possível, constantes de ajuste em MAIÚSCULAS no topo do módulo, testes em `backend/tests/` com análises sintéticas (sem motor) e `@needs_stockfish` para os que precisam do motor. Em testes de endpoint que chamam o motor, prefira substituir as funções do `engine_service` importadas no servidor com `monkeypatch` (ver a fixture `client` em `test_repertoire.py`).
+- Prompts novos em português, seguindo o modelo de `REPERTOIRE_COACH` (persona, idioma, "não invente lances fora dos dados", limite de tamanho).
 - Frontend: componentes funcionais com hooks; sem biblioteca de estado nem roteador; estado usado em código assíncrono fica em `useRef`.
 
 ## 6.6 Armadilhas conhecidas

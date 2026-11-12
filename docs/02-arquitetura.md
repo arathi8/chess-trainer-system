@@ -98,7 +98,7 @@ flowchart LR
 | [llmConfig.ts](../frontend/src/llmConfig.ts) | Tipos de configuração, busca do catálogo, persistência em `sessionStorage` |
 | [api.ts](../frontend/src/api.ts) | Apenas a constante `API_BASE_URL` |
 | [RepertoirePicker.tsx](../frontend/src/components/RepertoirePicker.tsx) | Modo repertório: catálogo pesquisável (família → variante), prévia da linha de referência e escolha de cor |
-| [RepertoireTrainer.tsx](../frontend/src/components/RepertoireTrainer.tsx) | Modo repertório: tela de treino com as fases `drill → line-complete → playout → summary`, modal de confirmação ao sair da teoria, dica/seta, partida contra o Stockfish depois da teoria e resumo da sessão (detalhes em [07-modo-repertorio.md](07-modo-repertorio.md)) |
+| [RepertoireTrainer.tsx](../frontend/src/components/RepertoireTrainer.tsx) | Modo repertório: tela de treino com as fases `intro → drill → line-complete → playout → summary`, apresentação da abertura e "por que esse lance?" pela LLM, modal de confirmação ao sair da teoria, dica/seta, partida contra o Stockfish depois da teoria e resumo da sessão (detalhes em [07-modo-repertorio.md](07-modo-repertorio.md)) |
 | [repertoire/drill.ts](../frontend/src/repertoire/drill.ts) | Lógica pura do drill sobre a árvore: classificar lance, resposta do oponente com cobertura, dica, contagem de linhas |
 | [repertoire/api.ts](../frontend/src/repertoire/api.ts) | Cliente tipado dos endpoints de repertório e dos que o modo reaproveita (`/engine-analysis`, `/engine-move`, `/game-stats`), com tipos espelhando os DTOs do backend. É o primeiro módulo de API tipado do frontend |
 | [chess/utils.ts](../frontend/src/chess/utils.ts) | Utilitários compartilhados por `GameBoard` e `RepertoireTrainer`: `cloneGame`, `plyFromFen`, `moveToUci`, `moveNumberLabel` |
@@ -109,10 +109,11 @@ flowchart LR
 | Módulo | Responsabilidade | Depende de |
 |---|---|---|
 | [chess_trainer_system_server.py](../backend/chess_trainer_system_server.py) | App FastAPI, `lifespan` que dispara a pré-carga das aberturas em *thread*, CORS, DTOs Pydantic, 6 rotas, conversão de exceções em status HTTP | todos os serviços |
-| [engine_service.py](../backend/services/engine_service.py) | Localizar o Stockfish, validar FEN/UCI, escolher lance do motor (normal, leniente, variado), analisar antes/depois, converter cp → Win%, classificar | `python-chess`, Stockfish |
+| [engine_service.py](../backend/services/engine_service.py) | Localizar o Stockfish, validar FEN/UCI, escolher lance do motor (normal, leniente, variado), analisar antes/depois (`get_move_analysis`) ou uma posição isolada (`get_position_analysis`), converter cp → Win%, classificar | `python-chess`, Stockfish |
+| [llm_service.py](../backend/services/llm_service.py) (repertório) | Além do relatório e da avaliação de lance: prompts em português da apresentação da abertura e do "por que esse lance?" (`generate_opening_intro`, `generate_theory_move_explanation`) | `report_service.format_san_line` |
 | [report_service.py](../backend/services/report_service.py) | Funções puras: precisão, fase, temas táticos, estatísticas da partida, momentos-chave, prompt do relatório | `python-chess` |
 | [openings_service.py](../backend/services/openings_service.py) | Indexar `openings.tsv` uma única vez (`load_openings`: cache global + `threading.Lock`; `build_openings_index` faz o trabalho) num `OpeningsIndex(named, book, lines)` — posições finais nomeadas, contador de popularidade por posição e as linhas já parseadas (`OpeningLine`); identificar abertura, ponto de desvio e lances teóricos | `python-chess`, TSV |
-| [repertoire_service.py](../backend/services/repertoire_service.py) | Modo repertório: catálogo família → variante com cor sugerida (`list_repertoire_catalog`) e árvore de teoria de uma abertura (`build_repertoire_tree`); `UnknownOpeningError` para nomes inexistentes | `openings_service`, `python-chess` |
+| [repertoire_service.py](../backend/services/repertoire_service.py) | Modo repertório: catálogo família → variante com cor sugerida (`list_repertoire_catalog`), árvore de teoria (`build_repertoire_tree`), dados para a apresentação (`opening_overview`) e contexto de um lance teórico (`theory_move_context`); `UnknownOpeningError`, `NotInTheoryError` | `openings_service`, `python-chess` |
 | [llm_service.py](../backend/services/llm_service.py) | Catálogo de provedores, cliente OpenAI-compatível, modo somente prompt, prompt de avaliação de lance, fachadas `generate_move_evaluation` / `generate_game_report` | `openai`, `report_service` |
 | [chess_trainer_system_cli.py](../backend/chess_trainer_system_cli.py) | Cliente de linha de comando da API | `requests` |
 
@@ -144,6 +145,8 @@ Base: `http://localhost:8000/api`. Documentação interativa em `http://localhos
 
 | `GET /repertoire/catalog` | — | `families[]` (`name`, `eco`, `reference_line`, `lines`, `default_color`, `variations[]`) | — | CPU local (índice já em memória); ~220 KB |
 | `GET /repertoire/tree?name=` | nome de família ou variante, exatamente como no catálogo | `name`, `eco`, `reference_line`, `lines`, `tree` (nó recursivo) | 404 nome desconhecido | CPU local; 6–70 ms |
+| `POST /repertoire/intro` | `name`, `color`, BYOK | `intro` (Markdown, em português) | 404 abertura desconhecida; 400/502/500 como `/move-evaluation` | 1 busca prof. 20 + 1 chamada LLM |
+| `POST /repertoire/explain-move` | `name`, `color`, `moves` (UCIs da posição inicial até o lance, inclusive), BYOK | `explanation` (Markdown, em português) | 404; 400 se `moves` sair da teoria; 400/502/500 como `/move-evaluation` | 2 buscas prof. 20 + 1 chamada LLM |
 
 BYOK = `provider`, `api_key`, `model`, `base_url` (opcionais; vazios usam o padrão do provedor).
 

@@ -5,12 +5,12 @@ Documentação técnica do estado atual do projeto, extraída diretamente da lei
 | Sincronização | |
 |---|---|
 | Branch | `feat/learn-repertoire` (criada a partir da `develop`, que já contém a `feat/training-game`) |
-| Último commit coberto | `49cd306` — *feat: add the learn-repertoire entry point and opening picker* |
+| Último commit coberto | `c86cf8e` — *feat: drill repertoire lines with a confirmation before leaving theory* |
 | Data | 2026-11-11 |
 | Alterações não commitadas consideradas | nenhuma |
-| Trabalho em andamento | Modo **Aprender repertório** — Fases 1 e 2 de 6 concluídas; ver [07-modo-repertorio.md](07-modo-repertorio.md) |
+| Trabalho em andamento | Modo **Aprender repertório** — Fases 1 a 3 de 6 concluídas; ver [07-modo-repertorio.md](07-modo-repertorio.md) |
 
-Para saber o que mudou no código desde esta documentação: `git log --oneline 49cd306..HEAD` e `git diff 49cd306 HEAD --stat`.
+Para saber o que mudou no código desde esta documentação: `git log --oneline c86cf8e..HEAD` e `git diff c86cf8e HEAD --stat`.
 
 ## Princípio central
 
@@ -59,5 +59,5 @@ Pontos de entrada:
 
 - **Novo jogo** → partida de treino contra o Stockfish, todos os lances analisados durante o jogo mas com feedback oculto até o fim → estatísticas imediatas + narrativa do treinador.
 - **Carregar PGN** → importação de partida → análise automática de todos os lances → relatório.
-- **Aprender repertório** *(em desenvolvimento)* → escolher abertura/defesa do catálogo Lichess → drill das linhas teóricas → partida contra o Stockfish a partir da posição. Hoje existem o backend (catálogo e árvore), o botão na tela inicial e a tela de escolha; o drill ainda não.
+- **Aprender repertório** *(em desenvolvimento)* → escolher abertura/defesa do catálogo Lichess → drill das linhas teóricas → partida contra o Stockfish a partir da posição. Hoje funcionam a escolha da abertura e o drill (com confirmação ao sair da teoria e resumo); faltam a LLM e a partida contra o Stockfish.
 - **CLI** (`backend/chess_trainer_system_cli.py`) → avaliação de um lance (FEN + UCI) via API, interativa ou por arquivos.

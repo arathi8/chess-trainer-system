@@ -34,6 +34,8 @@ Contexto condensado para uma sessão nova (Claude ou outra IA generativa) começ
 | Mudar a explicação de um lance | [llm_service.py](../backend/services/llm_service.py) | `generate_prompt`, `format_analysis_block` |
 | Adicionar provedor LLM | [llm_service.py](../backend/services/llm_service.py) | entrada em `PROVIDER_DEFAULTS` (o frontend lê o catálogo de `/api/llm-providers` automaticamente) |
 | Mudar identificação de abertura | [openings_service.py](../backend/services/openings_service.py) | `identify_opening`, `book_moves_from`; dados em `backend/data/openings.tsv` |
+| Regras do drill de repertório (resposta do oponente, cobertura, dica) | [drill.ts](../frontend/src/repertoire/drill.ts) | `pickOpponentMove`, `hintMove`, `classifyUserMove` |
+| Tela de treino de repertório (fases, modal fora da teoria, resumo) | [RepertoireTrainer.tsx](../frontend/src/components/RepertoireTrainer.tsx) | `onDrop`, `advance`, `stayInTheory`, `leaveTheory`, `startLine` |
 | Catálogo e árvore do modo repertório | [repertoire_service.py](../backend/services/repertoire_service.py) | `list_repertoire_catalog`, `build_repertoire_tree`, `belongs_to`, `side_of_last_move` |
 | Novo endpoint | [chess_trainer_system_server.py](../backend/chess_trainer_system_server.py) | DTO Pydantic + rota; lógica num serviço, não na rota |
 | Fluxo da partida, chamadas à API, fim de jogo | [GameBoard.tsx](../frontend/src/components/GameBoard.tsx) | `onDrop`, `requestEngineMove`, `requestEngineAnalysis`, `analyseInBackground`, `finishGame`, `analyseImportedGame`, `submitReport`, `requestGameStats`, `requestCoachReport`, `requestMoveEvaluation` |

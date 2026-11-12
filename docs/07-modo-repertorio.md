@@ -8,8 +8,8 @@ Plano aprovado e status da feature na branch `feat/learn-repertoire`. Atualize a
 |---|---|---|---|
 | 1 | Backend: catálogo e árvore de teoria | ✅ concluída | `a719b4c` |
 | 2 | Frontend: botão na tela inicial, escolha do repertório, cliente de API tipado | ✅ concluída | `49cd306` |
-| 3 | Drill no frontend (inclui confirmação ao sair da teoria) | ⏳ próxima | — |
-| 4 | LLM: apresentação da abertura e "por que esse lance?" | pendente | — |
+| 3 | Drill no frontend (inclui confirmação ao sair da teoria) | ✅ concluída | `c86cf8e` |
+| 4 | LLM: apresentação da abertura e "por que esse lance?" | ⏳ próxima | — |
 | 5 | Partida contra o Stockfish a partir da posição (playout) | pendente | — |
 | 6 | Documentação final | pendente | — |
 
@@ -60,11 +60,33 @@ Diferenças em relação ao plano original: a lógica ficou num módulo próprio
 
 Diferença em relação ao plano original: o cliente de API ficou em `frontend/src/repertoire/api.ts` (pasta da feature, junto do futuro `drill.ts`), e não em `frontend/src/api/repertoire.ts`, para não criar uma pasta `api/` ao lado do arquivo `api.ts`.
 
-### Fase 3 — Drill
+### Fase 3 — Drill ✅
+
+**Como ficou implementado** (commit `c86cf8e`):
+
+- [drill.ts](../frontend/src/repertoire/drill.ts), só com funções puras:
+  - `classifyUserMove`, `expectedMoves`, `isUserTurn`, `sideToMove`, `isLineEnd`;
+  - `pickOpponentMove(node, key, completed, forcedUci, rng)`: sorteio ponderado por popularidade, só entre filhos com linhas ainda não concluídas na sessão (cobertura), ou o lance forçado ao repetir uma linha;
+  - `hintMove`: o lance mais popular entre os que levam a linhas não vistas;
+  - `leafKeys`, `countLines`, `isExhausted`, `deepestOpening`, `pathKey` (um nó é identificado pelos UCIs desde a raiz).
+- [RepertoireTrainer.tsx](../frontend/src/components/RepertoireTrainer.tsx), fases `drill → line-complete → playout → summary`, layout em 3 colunas reaproveitando as classes do `GameBoard`. A fase `intro` fica para a Fase 4, junto com a apresentação da LLM.
+  - **Drill**: o oponente responde após 450 ms. O painel diz quantos lances teóricos existem na posição. "Mostrar dica" e "Mostrar o lance" dão a mesma ajuda que um erro, e contam como não-acerto de primeira.
+  - **Fora da teoria**: o lance fica no tabuleiro e um modal mostra os lances teóricos e a avaliação do Stockfish (`/api/engine-analysis`, carregada em paralelo; respostas atrasadas são descartadas por id). **Não** desfaz o lance, registra o erro e mostra a dica (1ª vez: destaque da peça; depois: seta). **Sim** mantém o lance, registra o desvio e vai para `playout`.
+  - **Fim de linha**: próxima linha, repetir (o oponente reproduz os mesmos lances) ou jogar a partir dali.
+  - **Resumo**: taxa de acertos de primeira, linhas concluídas e diferentes, até 5 posições com mais erros/dicas (com os lances teóricos) e o ponto de saída da teoria.
+  - `playout` é **provisório**: mostra a mensagem de que a partida contra o Stockfish chega na Fase 5, com botões para voltar ao treino ou ver o resumo.
+- `cloneGame`, `plyFromFen`, `moveToUci` e `moveNumberLabel` estão em [chess/utils.ts](../frontend/src/chess/utils.ts); o `GameBoard` passou a importá-los.
+- `repertoire/api.ts` ganhou `fetchMoveAnalysis` e os tipos `PositionAnalysis` e `MoveAnalysis`.
+
+**Contagem de "linhas":** o catálogo conta linhas do dataset (Najdorf = 33), mas o drill conta **fins de linha** da árvore (Najdorf = 23), porque linhas que são prefixo de outras não são um fim. O painel do drill usa os fins de linha.
+
+**Verificação:** sem framework de testes no frontend, a lógica do `drill.ts` foi exercitada com um script Node (`--experimental-strip-types`) sobre as árvores reais. Seguindo sempre a dica, cada sessão cobre uma linha nova: Najdorf 23/23 em 23 sessões, Ruy Lopez 154/154 em 154. Também confirmou o lance forçado ao repetir e a detecção de lance fora da teoria. Adicionar Vitest ao frontend é um próximo passo natural.
+
+**Plano original da fase:**
 
 - **Não** adicionar um terceiro modo ao `GameBoard.tsx` (débito C1).
 - `frontend/src/repertoire/drill.ts` (novo, funções puras): `expectedMoves(node)` (qualquer filho teórico é acerto; o mais popular é a linha principal), `classifyUserMove(node, uci) → 'theory' | 'off-book'`, `pickOpponentMove(node, visited, rng)` (sorteio ponderado por popularidade, preferindo ramos não vistos), `isLineEnd(node)`, `nextUnvisitedLine(tree, visited)`.
-- `RepertoireTrainer.tsx` (já existe, hoje só carrega a árvore): estados `intro → drill → line-complete → playout → summary`; modal de confirmação ao sair da teoria (reaproveita `Modal`); dica com `squareStyles` e depois seta com `arrows` do `react-chessboard`; opcionalmente mostra no modal a avaliação do Stockfish do lance jogado vs. o teórico (`/api/engine-analysis`); painel com o nome da variante atual e a lista de lances; resumo determinístico (linhas concluídas, acertos de primeira, lances com mais erros, ponto de saída da teoria).
+- `RepertoireTrainer.tsx`: estados `intro → drill → line-complete → playout → summary`; modal de confirmação ao sair da teoria (reaproveita `Modal`); dica com `squareStyles` e depois seta com `arrows` do `react-chessboard`; opcionalmente mostra no modal a avaliação do Stockfish do lance jogado vs. o teórico (`/api/engine-analysis`); painel com o nome da variante atual e a lista de lances; resumo determinístico (linhas concluídas, acertos de primeira, lances com mais erros, ponto de saída da teoria).
 - Mover `cloneGame` e `plyFromFen` de `GameBoard.tsx` para `frontend/src/chess/utils.ts`.
 
 ### Fase 4 — LLM

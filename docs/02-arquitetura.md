@@ -98,8 +98,10 @@ flowchart LR
 | [llmConfig.ts](../frontend/src/llmConfig.ts) | Tipos de configuração, busca do catálogo, persistência em `sessionStorage` |
 | [api.ts](../frontend/src/api.ts) | Apenas a constante `API_BASE_URL` |
 | [RepertoirePicker.tsx](../frontend/src/components/RepertoirePicker.tsx) | Modo repertório: catálogo pesquisável (família → variante), prévia da linha de referência e escolha de cor |
-| [RepertoireTrainer.tsx](../frontend/src/components/RepertoireTrainer.tsx) | Modo repertório: tela de treino. Hoje só carrega a árvore de teoria; o drill entra na Fase 3 ([07-modo-repertorio.md](07-modo-repertorio.md)) |
-| [repertoire/api.ts](../frontend/src/repertoire/api.ts) | Cliente tipado dos endpoints de repertório, com tipos espelhando os DTOs do backend. É o primeiro módulo de API tipado do frontend |
+| [RepertoireTrainer.tsx](../frontend/src/components/RepertoireTrainer.tsx) | Modo repertório: tela de treino com as fases `drill → line-complete → playout → summary`, modal de confirmação ao sair da teoria, dica/seta e resumo da sessão (detalhes em [07-modo-repertorio.md](07-modo-repertorio.md)) |
+| [repertoire/drill.ts](../frontend/src/repertoire/drill.ts) | Lógica pura do drill sobre a árvore: classificar lance, resposta do oponente com cobertura, dica, contagem de linhas |
+| [repertoire/api.ts](../frontend/src/repertoire/api.ts) | Cliente tipado dos endpoints de repertório e de `/engine-analysis`, com tipos espelhando os DTOs do backend. É o primeiro módulo de API tipado do frontend |
+| [chess/utils.ts](../frontend/src/chess/utils.ts) | Utilitários compartilhados por `GameBoard` e `RepertoireTrainer`: `cloneGame`, `plyFromFen`, `moveToUci`, `moveNumberLabel` |
 | [HomePage.tsx](../frontend/src/components/HomePage.tsx) | Não é importado em lugar nenhum (código morto, versão antiga da tela inicial) |
 
 ### Backend

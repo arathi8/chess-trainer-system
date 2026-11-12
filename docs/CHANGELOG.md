@@ -2,6 +2,12 @@
 
 Cada entrada registra uma sincronização desta pasta com o código. A mais recente fica no topo.
 
+## 2026-11-11 — sincronizado até `c86cf8e` (branch `feat/learn-repertoire`)
+
+| Commit | Mudança no código | Documentos atualizados |
+|---|---|---|
+| `c86cf8e` feat: drill repertoire lines with a confirmation before leaving theory | Drill completo (`drill.ts` + `RepertoireTrainer`), modal ao sair da teoria com avaliação do Stockfish, dica/seta, resumo da sessão; `playout` provisório; utilitários em `chess/utils.ts` | README, 02 (componentes), 03 (3.7 nova; decisão do motor virou 3.8), 04 (padrões do frontend), 06 (mapa), 07 (Fase 3), HTML |
+
 ## 2026-11-11 — sincronizado até `49cd306` (branch `feat/learn-repertoire`)
 
 | Commit | Mudança no código | Documentos atualizados |

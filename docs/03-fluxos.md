@@ -200,7 +200,41 @@ sequenceDiagram
     GB-->>U: Markdown no painel "Análise por lance"
 ```
 
-## 3.7 Decisão do lance do motor
+## 3.7 Drill de repertório: lance do usuário
+
+Tudo roda no navegador sobre a árvore carregada uma vez (`GET /api/repertoire/tree`); o backend só é chamado para avaliar um lance fora da teoria.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as Jogador
+    participant RT as RepertoireTrainer
+    participant D as drill.ts
+    participant API as FastAPI
+
+    RT->>D: pickOpponentMove(nó, linhas concluídas)
+    D-->>RT: resposta teórica (ponderada, prioriza linhas novas)
+    U->>RT: arrasta peça
+    RT->>D: classifyUserMove(nó, uci)
+    alt lance teórico
+        D-->>RT: theory + nó filho
+        RT->>RT: avança; se fim de linha → line-complete
+    else fora da teoria
+        D-->>RT: off-book
+        RT-->>U: modal "Sair da teoria?" + lances teóricos
+        RT-)API: POST /engine-analysis (avaliação do lance)
+        API-->>RT: classificação e avaliações
+        alt Não
+            U->>RT: seguir a teoria
+            RT->>RT: desfaz, registra erro, dica (peça) → seta (lance)
+        else Sim
+            U->>RT: sair da teoria
+            RT->>RT: mantém lance, registra desvio → playout
+        end
+    end
+```
+
+## 3.8 Decisão do lance do motor
 
 ```mermaid
 flowchart TD

@@ -51,6 +51,10 @@ Padrões encontrados no código atual. Alguns são aplicados de forma explícita
 | **Tabelas de lookup para apresentação** | `BADGE_CONFIG`, `TAG_LABELS`, `PHASE_LABELS`, `COUNT_ROWS` | explícito | Mapeiam códigos do backend (em inglês) para rótulos e estilos em português |
 | **Gateway de persistência** | `loadLLMConfig` / `saveLLMConfig` ([llmConfig.ts](../frontend/src/llmConfig.ts)) | explícito | Encapsula `sessionStorage` com tratamento de erro; o resto do app não sabe onde a configuração fica |
 | **Configuração dirigida pelo servidor** (*server-driven UI*) | `fetchLLMProviders` → `LLMSettings` | explícito | O formulário (campos obrigatórios, placeholders, opção sem LLM) é montado a partir do catálogo enviado pelo backend |
+| **Núcleo funcional no frontend** | [repertoire/drill.ts](../frontend/src/repertoire/drill.ts) | explícito | Regras do drill (classificar lance, escolher resposta, cobertura, dica) como funções puras com `rng` injetável; o componente só cuida de estado, UI e transições |
+| **Máquina de estados de fases** | `phase` em `RepertoireTrainer` (`drill`, `line-complete`, `playout`, `summary`) | explícito | O mesmo padrão da navegação do `App`, aplicado dentro da tela |
+| **Descarte de respostas atrasadas** | `evalRequestRef` em `RepertoireTrainer` | explícito | Cada avaliação recebe um id; se o usuário decidir antes da resposta chegar, ela é ignorada |
+| **Feature folder** | `frontend/src/repertoire/` (`api.ts`, `drill.ts`) | explícito | Código de um modo agrupado por funcionalidade, e não por tipo de arquivo |
 | **Validação em duas camadas** | `chess.js` no cliente, `python-chess` no servidor | explícito | Feedback imediato no tabuleiro; o servidor revalida e não confia no cliente |
 
 ## 4.4 Onde os padrões poderiam evoluir

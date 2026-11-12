@@ -167,34 +167,44 @@ def test_engine_move_rejects_invalid_fen():
 
 # --- API ---
 
-def test_game_report_endpoint_prompt_only():
+def test_game_stats_endpoint():
     from fastapi.testclient import TestClient
     from chess_trainer_system_server import app
 
     client = TestClient(app)
     response = client.post(
-        "/api/game-report",
-        json={
-            "user_color": "white",
-            "result": "0-1",
-            "termination": "resignation",
-            "moves": [GOOD_MOVE, HUNG_BISHOP],
-            "provider": "prompt",
-        },
+        "/api/game-stats",
+        json={"user_color": "white", "pgn": "1. e4 e5 2. Ba6 bxa6", "moves": [GOOD_MOVE, HUNG_BISHOP]},
     )
     assert response.status_code == 200
-    body = response.json()
-    assert body["stats"]["classification_counts"]["Blunder"] == 1
-    assert "Specific guidance" in body["report"]
+    stats = response.json()["stats"]
+    assert stats["classification_counts"]["Blunder"] == 1
+    assert stats["opening"]["eco"] == "C20"
 
-    # No API key: stats still come back, with an error instead of the narrative.
-    response = client.post(
-        "/api/game-report",
-        json={"user_color": "white", "result": "0-1", "termination": "resignation", "moves": [HUNG_BISHOP], "provider": "gemini"},
-    )
+    response = client.post("/api/game-stats", json={"user_color": "white", "moves": []})
+    assert response.status_code == 400
+
+
+def test_game_report_endpoint():
+    from fastapi.testclient import TestClient
+    from chess_trainer_system_server import app
+
+    client = TestClient(app)
+    stats = client.post(
+        "/api/game-stats", json={"user_color": "white", "moves": [GOOD_MOVE, HUNG_BISHOP]}
+    ).json()["stats"]
+    game = {"stats": stats, "result": "0-1", "termination": "resignation"}
+
+    response = client.post("/api/game-report", json={**game, "provider": "prompt"})
     assert response.status_code == 200
-    assert response.json()["report"] is None
-    assert response.json()["report_error"]
+    assert "Specific guidance" in response.json()["report"]
+
+    # Same errors as /api/move-evaluation: the stats were already delivered by /api/game-stats.
+    response = client.post("/api/game-report", json={**game, "provider": "gemini"})
+    assert response.status_code == 400
+
+    response = client.post("/api/game-report", json={**game, "stats": {}, "provider": "prompt"})
+    assert response.status_code == 400
 
 
 # --- engine variety ---

@@ -80,13 +80,21 @@ class GameReportMove(BaseModel):
     before_move_analysis: dict
     after_move_analysis: dict
 
-class GameReportRequest(BaseModel):
+class GameStatsRequest(BaseModel):
     user_color: str
-    result: str
-    termination: str
     pgn: str = ""
     moves: list[GameReportMove]
     total_user_moves: Optional[int] = None
+
+class GameStatsResponse(BaseModel):
+    stats: dict[str, Any]
+
+class GameReportRequest(BaseModel):
+    # As returned by /api/game-stats
+    stats: dict[str, Any]
+    result: str
+    termination: str
+    pgn: str = ""
     lenient_plies: list[int] = []
     # True for games imported from a PGN rather than played against the engine
     imported: bool = False
@@ -97,9 +105,7 @@ class GameReportRequest(BaseModel):
     base_url: Optional[str] = None
 
 class GameReportResponse(BaseModel):
-    stats: dict[str, Any]
-    report: Optional[str] = None
-    report_error: Optional[str] = None
+    report: str
 
 class LLMProviderOption(BaseModel):
     label: str
@@ -172,9 +178,9 @@ def move_evaluation(payload: MoveEvaluationRequest):
 
     return MoveEvaluationResponse(evaluation=evaluation)
 
-@app.post("/api/game-report", response_model=GameReportResponse)
-def game_report(payload: GameReportRequest):
-    """Builds the post-game report of a training game: stats always, LLM narrative when configured."""
+@app.post("/api/game-stats", response_model=GameStatsResponse)
+def game_stats(payload: GameStatsRequest):
+    """Deterministic part of the post-game report: accuracy, classifications, phases, key moments and opening."""
     moves = [move.model_dump() for move in payload.moves]
     if not moves:
         raise HTTPException(status_code=400, detail="No analysed moves to report on.")
@@ -189,9 +195,15 @@ def game_report(payload: GameReportRequest):
     except ValueError:
         stats["opening"] = None
 
+    return GameStatsResponse(stats=stats)
+
+
+@app.post("/api/game-report", response_model=GameReportResponse)
+def game_report(payload: GameReportRequest):
+    """The coach's post-game report, written by the LLM from the stats of /api/game-stats."""
     try:
         report = generate_game_report(
-            stats,
+            payload.stats,
             result=payload.result,
             termination=payload.termination,
             pgn=payload.pgn,
@@ -202,11 +214,16 @@ def game_report(payload: GameReportRequest):
             model=payload.model,
             base_url=payload.base_url,
         )
-    except (LLMError, ValueError) as e:
-        # LLMNotConfiguredError is a subclass: the stats are still useful without the narrative.
-        return GameReportResponse(stats=stats, report_error=str(e))
+    except KeyError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid game stats: missing {e}")
+    except LLMNotConfiguredError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except LLMError as e:
+        raise HTTPException(status_code=502, detail=f"LLM provider error: {e}")
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=f"LLM configuration error: {e}")
 
-    return GameReportResponse(stats=stats, report=report)
+    return GameReportResponse(report=report)
 
 
 if __name__ == "__main__":

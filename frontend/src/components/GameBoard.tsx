@@ -5,7 +5,7 @@ import type { Square } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 import LLMSettings from './LLMSettings'
 import GameReport from './GameReport'
-import type { GameReportData } from './GameReport'
+import type { CoachReport, GameStats } from './GameReport'
 import { API_BASE_URL } from '../api'
 import type { LLMConfig } from '../llmConfig'
 import ReactMarkdown from 'react-markdown'
@@ -65,7 +65,7 @@ interface PositionAnalysis {
   line: string;
 }
 
-// One analysed user move, in the shape /api/game-report expects.
+// One analysed user move, in the shape /api/game-stats expects.
 interface MoveAnalysis {
   ply: number
   san: string
@@ -73,6 +73,16 @@ interface MoveAnalysis {
   move_delta: number
   before_move_analysis: PositionAnalysis
   after_move_analysis: PositionAnalysis
+}
+
+// What /api/game-report needs besides the BYOK settings; kept to retry the coach's report.
+interface ReportContext {
+  stats: GameStats
+  result: string
+  termination: string
+  pgn: string
+  lenient_plies: number[]
+  imported: boolean
 }
 
 // Half-move index of the side to move in a FEN: 0 = White's first move.
@@ -162,8 +172,9 @@ export default function GameBoard({
   const [importProgress, setImportProgress] = useState<{ done: number; total: number } | null>(null)
   // Opponent moves still unclassified after the game (imported games, or failed analyses in training).
   const [opponentAnalysing, setOpponentAnalysing] = useState(false)
-  const [report, setReport] = useState<GameReportData | null>(null)
-  const [reportLoading, setReportLoading] = useState(false)
+  const [stats, setStats] = useState<GameStats | null>(null)
+  const [statsLoading, setStatsLoading] = useState(false)
+  const [coachReport, setCoachReport] = useState<CoachReport>({ text: null, error: null, loading: false })
   const [reportMessage, setReportMessage] = useState<string | null>(null)
   const [selectedMove, setSelectedMove] = useState<{ turnNumber: number; isWhite: boolean } | null>(null)
 
@@ -175,7 +186,7 @@ export default function GameBoard({
   const analysisByPlyRef = useRef<Map<number, MoveAnalysis>>(new Map())
   const pendingAnalysesRef = useRef<Set<Promise<void>>>(new Set())
   const lenientPliesRef = useRef<number[]>([])
-  const reportPayloadRef = useRef<Record<string, unknown> | null>(null)
+  const reportContextRef = useRef<ReportContext | null>(null)
   const autoAnalysisStartedRef = useRef(false)
   const gameStartedRef = useRef(false)
   const moveCoachRef = useRef<HTMLDivElement>(null)
@@ -450,30 +461,54 @@ export default function GameBoard({
     }
   }
 
-  const generateReport = async () => {
-    const payload = reportPayloadRef.current
-    if (!payload) return
+  // Deterministic part of the report: fast, shown as soon as the game's analyses are in.
+  const requestGameStats = async (finalGame: Chess, moves: MoveAnalysis[]): Promise<GameStats | null> => {
+    const userColorCode = userColor === 'white' ? 'w' : 'b'
+    const totalUserMoves = finalGame.history({ verbose: true }).filter(m => m.color === userColorCode).length
 
-    setReportLoading(true)
     try {
-      const response = await fetch(`${API_BASE_URL}/game-report`, {
+      const response = await fetch(`${API_BASE_URL}/game-stats`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, ...llmConfig })
+        body: JSON.stringify({ user_color: userColor, pgn: finalGame.pgn(), moves, total_user_moves: totalUserMoves })
       })
       const data = await response.json().catch(() => null)
 
       if (!response.ok) {
-        setReportMessage(data?.detail ?? `Não foi possível gerar o relatório: erro HTTP ${response.status}`)
+        setReportMessage(data?.detail ?? `Não foi possível calcular as estatísticas: erro HTTP ${response.status}`)
+        return null
+      }
+      return data.stats
+    } catch (err) {
+      console.error('Game stats error:', err)
+      setReportMessage('Não foi possível calcular as estatísticas no momento.')
+      return null
+    }
+  }
+
+  // The coach's narrative, written by the LLM from the stats. Also the "retry" action.
+  const requestCoachReport = async () => {
+    const context = reportContextRef.current
+    if (!context) return
+
+    setCoachReport({ text: null, error: null, loading: true })
+    try {
+      const response = await fetch(`${API_BASE_URL}/game-report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...context, ...llmConfig })
+      })
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok) {
+        const error = data?.detail ?? `Não foi possível gerar o relatório: erro HTTP ${response.status}`
+        setCoachReport({ text: null, error, loading: false })
         return
       }
-      setReportMessage(null)
-      setReport(data)
+      setCoachReport({ text: data.report, error: null, loading: false })
     } catch (err) {
       console.error('Game report error:', err)
-      setReportMessage('Não foi possível gerar o relatório no momento.')
-    } finally {
-      setReportLoading(false)
+      setCoachReport({ text: null, error: 'Não foi possível gerar o relatório no momento.', loading: false })
     }
   }
 
@@ -481,28 +516,30 @@ export default function GameBoard({
     const moves = [...analysisByPlyRef.current.values()]
       .filter(m => isUserPly(m.ply))
       .sort((a, b) => a.ply - b.ply)
-    const userColorCode = userColor === 'white' ? 'w' : 'b'
-    const totalUserMoves = finalGame.history({ verbose: true }).filter(m => m.color === userColorCode).length
 
     if (moves.length < MIN_MOVES_FOR_REPORT) {
-      setReportLoading(false)
+      setStatsLoading(false)
       setReportMessage(
         `Lances insuficientes para avaliar: são necessários pelo menos ${MIN_MOVES_FOR_REPORT} lances analisados.`
       )
       return
     }
 
-    reportPayloadRef.current = {
-      user_color: userColor,
+    setStatsLoading(true)
+    const gameStats = await requestGameStats(finalGame, moves)
+    setStatsLoading(false)
+    if (!gameStats) return
+
+    setStats(gameStats)
+    reportContextRef.current = {
+      stats: gameStats,
       result,
       termination,
       pgn: finalGame.pgn(),
-      moves,
-      total_user_moves: totalUserMoves,
       lenient_plies: lenientPliesRef.current,
       imported
     }
-    await generateReport()
+    await requestCoachReport()
   }
 
   // Classifies every move of one side that has no analysis yet, a few at a time.
@@ -551,9 +588,10 @@ export default function GameBoard({
     setGameFinished(true)
     setResultLabel(label)
     setIsEngineThinking(false)
-    setReportLoading(true)
+    setStatsLoading(true)
 
     // Moves were analysed during the game: wait for the last ones, then retry any that failed.
+    // The badges appear now, with the stats, while the coach's report is generated.
     await Promise.allSettled([...pendingAnalysesRef.current])
     await analyseMoves(finalGame, 'user')
 
@@ -571,7 +609,6 @@ export default function GameBoard({
     setImportProgress(null)
 
     analyseOpponentMoves(importedGame)
-    setReportLoading(true)
     const termination = importedGame.isGameOver() ? detectTermination(importedGame) : 'imported game'
     await submitReport(importedGame, importedGame.getHeaders().Result ?? '*', termination, true)
   }
@@ -851,11 +888,12 @@ export default function GameBoard({
             {gameFinished && !importProgress && (
               <GameReport
                 result={resultLabel}
-                data={report}
-                loading={reportLoading}
+                stats={stats}
+                statsLoading={statsLoading}
+                coach={coachReport}
                 message={reportMessage}
                 onSelectMoment={(fen, ply) => handleMoveClick(fen, Math.floor(ply / 2) + 1, ply % 2 === 0)}
-                onRetry={generateReport}
+                onRetry={requestCoachReport}
                 onConfigureLLM={() => setLlmSettingsOpen(true)}
               />
             )}

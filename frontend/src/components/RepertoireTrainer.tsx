@@ -256,7 +256,10 @@ export default function RepertoireTrainer({
     }
     return reference.history()
   }, [tree])
-  const [progressOpen, setProgressOpen] = useState(true)
+  // The per-line details stay hidden until the user expands them; the summary line is always visible.
+  const [progressOpen, setProgressOpen] = useState(false)
+  // Where the user was when opening the session summary, so they can go back there.
+  const [phaseBeforeSummary, setPhaseBeforeSummary] = useState<Phase | null>(null)
   const reached = deepestOpening(path)
   const userTurn = Boolean(node && isUserTurn(node, color))
   const userToMoveInPlayout = (game.turn() === 'w') === (color === 'white')
@@ -505,7 +508,17 @@ export default function RepertoireTrainer({
     else analyseInBackground(pending.move)
   }
 
+  // Leaves the drill at the current position and plays it out against Stockfish.
   const playFromHere = () => enterPlayout(game, path.length - 1)
+
+  const openSummary = () => {
+    setPhaseBeforeSummary(phase)
+    setPhase('summary')
+  }
+
+  // From the summary: back to the drill position or the game in progress, as they were left.
+  const canResume = phaseBeforeSummary !== null && phaseBeforeSummary !== 'intro' && phaseBeforeSummary !== 'summary'
+  const canPlayFromSummary = phaseBeforeSummary === 'drill' || phaseBeforeSummary === 'line-complete'
 
   const askHint = () => {
     setAttempts(a => a + 1)
@@ -554,7 +567,10 @@ export default function RepertoireTrainer({
       onToggle={e => setProgressOpen((e.currentTarget as HTMLDetailsElement).open)}
     >
       <summary>
-        <span>Progresso: {linesSeen} de {totalLines} linhas ({percent(linesSeen, totalLines)}%)</span>
+        <span className="repertoire-progress-head">
+          <span>Progresso: {linesSeen} de {totalLines} linhas ({percent(linesSeen, totalLines)}%)</span>
+          <small>{progressOpen ? 'ocultar detalhes ▴' : 'ver detalhes ▾'}</small>
+        </span>
         <span className="repertoire-bar"><span style={{ width: `${percent(linesSeen, totalLines)}%` }} /></span>
       </summary>
       <p className="message system">
@@ -729,7 +745,7 @@ export default function RepertoireTrainer({
           )}
           <div className="repertoire-actions">
             <button className="primary-action full" onClick={() => startLine(null)}>Voltar ao treino de linhas</button>
-            <button className="outline-btn full" onClick={() => setPhase('summary')}>Ver resumo da sessão</button>
+            <button className="outline-btn full" onClick={openSummary}>Ver resumo da sessão</button>
           </div>
         </>
       )}
@@ -745,7 +761,7 @@ export default function RepertoireTrainer({
         </button>
         <div className="top-actions">
           {phase !== 'summary' && phase !== 'intro' && tree && (
-            <button className="outline-btn" onClick={() => setPhase('summary')}>Encerrar treino</button>
+            <button className="outline-btn" onClick={openSummary}>Resumo da sessão</button>
           )}
           <button className="outline-btn" onClick={() => setLlmSettingsOpen(true)}>Configurar LLM</button>
           <button className="outline-btn" onClick={onChangeOpening}>Trocar abertura</button>
@@ -887,6 +903,9 @@ export default function RepertoireTrainer({
                         {attempts === 0 ? 'Mostrar dica' : 'Mostrar o lance'}
                       </button>
                     )}
+                    <button className="outline-btn full" onClick={playFromHere}>
+                      Jogar contra o Stockfish a partir daqui
+                    </button>
                   </>
                 ) : (
                   <p className="message system">O oponente está escolhendo uma resposta teórica...</p>
@@ -948,7 +967,21 @@ export default function RepertoireTrainer({
                 )}
 
                 <div className="repertoire-actions">
-                  <button className="primary-action full" onClick={() => startLine(null)}>Continuar treinando</button>
+                  {canResume && phaseBeforeSummary && (
+                    <button className="primary-action full" onClick={() => setPhase(phaseBeforeSummary)}>
+                      {phaseBeforeSummary === 'playout'
+                        ? (playout?.finished ? 'Voltar ao resultado da partida' : 'Voltar à partida')
+                        : 'Voltar ao treino de onde parei'}
+                    </button>
+                  )}
+                  {canPlayFromSummary && (
+                    <button className="outline-btn full" onClick={playFromHere}>
+                      Jogar contra o Stockfish a partir da posição atual
+                    </button>
+                  )}
+                  <button className={canResume ? 'outline-btn full' : 'primary-action full'} onClick={() => startLine(null)}>
+                    Começar uma nova linha
+                  </button>
                   <button className="outline-btn full" onClick={onChangeOpening}>Trocar abertura</button>
                 </div>
               </div>

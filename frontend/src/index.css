@@ -272,6 +272,9 @@ button {
 .repertoire-progress{margin-top:22px;padding-top:14px;border-top:1px solid #2a2e2a}
 .repertoire-progress summary{cursor:pointer;display:flex;flex-direction:column;gap:7px;font-size:11px;color:var(--gold);letter-spacing:.5px;list-style:none}
 .repertoire-progress summary::-webkit-details-marker{display:none}
+.repertoire-progress-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.repertoire-progress-head small{font-size:10px;color:#8b9487;letter-spacing:0;white-space:nowrap}
+.repertoire-progress summary:hover small{color:var(--gold-light)}
 .repertoire-bar{display:block;height:5px;background:#2a2e2a;border-radius:3px;overflow:hidden}
 .repertoire-bar span{display:block;height:100%;background:var(--gold-light);transition:width .3s}
 .repertoire-progress .message.system{margin:10px 0 6px}

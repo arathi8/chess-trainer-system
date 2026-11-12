@@ -265,6 +265,11 @@ button {
 .repertoire-offbook p{margin:4px 0}
 .repertoire-offbook b{color:var(--gold-light)}
 .move-row button:disabled{cursor:default;color:#aeb3a9}
+.move-row button.offbook-move{color:var(--gold-light)}
+.repertoire-continue{max-width:600px;margin:18px auto 0;background:#202520;border:1px solid #5a4c33;border-radius:8px;padding:14px 16px;text-align:center}
+.repertoire-continue p{margin:0 0 12px;font-size:13px;color:#c1c5bd;line-height:1.5}
+.repertoire-continue b{color:var(--gold-light);font-weight:600}
+.repertoire-continue>div{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
 
 @media(max-width:1050px){
   .game-layout{grid-template-columns:220px minmax(440px,1fr) 285px}

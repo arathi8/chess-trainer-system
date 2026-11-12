@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '../api'
+import type { GameStats } from '../components/GameReport'
 
 export type Color = 'white' | 'black'
 
@@ -69,6 +70,23 @@ const getJson = <T>(path: string) => requestJson<T>(path)
 // Stockfish evaluation of one move (two depth-20 searches, a few seconds).
 export const fetchMoveAnalysis = (fen: string, move: string): Promise<MoveAnalysis> =>
   requestJson<MoveAnalysis>('/engine-analysis', { fen, move })
+
+// Stockfish's reply. Training mode: varied replies and lenient on early mistakes (see engine_service).
+export const fetchEngineMove = (fen: string): Promise<{ engine_move: string; grace_applied: boolean }> =>
+  requestJson('/engine-move', { fen, training: true })
+
+// One analysed user move, in the shape /api/game-stats expects (ply is 0-based: even = White).
+export interface AnalysedMove extends MoveAnalysis {
+  ply: number
+  san: string
+}
+
+export const fetchGameStats = (payload: {
+  user_color: Color
+  pgn: string
+  moves: AnalysedMove[]
+  total_user_moves: number
+}): Promise<GameStats> => requestJson<{ stats: GameStats }>('/game-stats', payload).then(data => data.stats)
 
 export async function fetchRepertoireCatalog(): Promise<RepertoireFamily[]> {
   const data = await getJson<{ families: RepertoireFamily[] }>('/repertoire/catalog')

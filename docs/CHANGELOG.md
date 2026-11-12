@@ -2,6 +2,12 @@
 
 Cada entrada registra uma sincronização desta pasta com o código. A mais recente fica no topo.
 
+## 2026-11-12 — sincronizado até `3d79911` (branch `feat/learn-repertoire`)
+
+| Commit | Mudança no código | Documentos atualizados |
+|---|---|---|
+| `3d79911` fix: let the repertoire drill hand over to Stockfish at any point | Correções do primeiro teste manual: progresso recolhido por padrão, botão "Jogar contra o Stockfish a partir daqui" no drill, resumo da sessão com "voltar de onde parei" e "jogar a posição atual" | README, 01 (F15), 07 (seção "Correções do primeiro teste manual"), HTML |
+
 ## 2026-11-11 — sincronizado até `beca22e` (branch `feat/learn-repertoire`)
 
 | Commit | Mudança no código | Documentos atualizados |

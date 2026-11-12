@@ -139,7 +139,7 @@ Diferença em relação ao plano original: o cliente de API ficou em `frontend/s
 
 **Como ficou:**
 
-- **Painel "Progresso"** no lado direito (todas as fases depois da apresentação), recolhível: barra e porcentagem geral, e as linhas **agrupadas um nível abaixo da abertura treinada**. Para uma família, os grupos são as variantes (Siciliana → Najdorf, Dragon…); para uma variante, as subvariantes (Najdorf → English Attack, Opocensky…).
+- **Painel "Progresso"** no lado direito (todas as fases depois da apresentação), recolhido por padrão desde `3d79911`: barra e porcentagem geral, e as linhas **agrupadas um nível abaixo da abertura treinada**. Para uma família, os grupos são as variantes (Siciliana → Najdorf, Dragon…); para uma variante, as subvariantes (Najdorf → English Attack, Opocensky…).
 - Cada grupo mostra concluídas/total e porcentagem. Cada linha mostra ✓/○, o nome mais específico (ex.: "Anti-English" dentro de "English Attack") e os lances a partir de onde ela se separa da linha de referência (ex.: `6. Be3 e5 7. Nb3 Be6 8. f3`).
 - **Clicar numa linha treina essa linha:** o oponente a reproduz e a dica aponta para ela. O painel do drill mostra "Treinando a linha …".
 - Os grupos começam abertos quando são poucos (até 20, como numa variante) e recolhidos quando são muitos (família inteira: a Siciliana tem 78 grupos e 259 linhas).
@@ -147,6 +147,17 @@ Diferença em relação ao plano original: o cliente de API ficou em `frontend/s
 - Lógica pura em `drill.ts`: `listLines`, `groupLines`, `subOpeningName` (o mesmo critério de `sub_opening_name` no backend). `formatMoves` foi para `chess/utils.ts`.
 
 **Observação sobre os dados:** na Najdorf, a base do Lichess tem 23 fins de linha em 17 grupos, quase todos com 1 linha; só "English Attack" (5) e "Opocensky" (3) têm várias. É a granularidade do dataset, não um problema de agrupamento.
+
+### Correções do primeiro teste manual ✅ (commit `3d79911`)
+
+Feedback do teste rápido no navegador (2026-11-12):
+
+| Problema relatado | Causa | Correção |
+|---|---|---|
+| "O progresso da linha ficou confuso" | O painel abria com a lista completa de grupos e linhas | Começa **recolhido**: só a barra e a porcentagem, com "ver detalhes ▾" para expandir |
+| "Não consegui sair do treino e ir jogar com o Stockfish; fica parado" | (1) No meio do drill só dava para ir ao Stockfish fazendo um lance fora da teoria ou chegando ao fim da linha. (2) "Encerrar treino" levava a um resumo cujas ações só recomeçavam o drill ou trocavam a abertura | (1) Botão **"Jogar contra o Stockfish a partir daqui"** no painel do drill. (2) O botão virou **"Resumo da sessão"**, e o resumo oferece **voltar de onde parou** (posição do drill ou partida em andamento) e **jogar a posição atual contra o Stockfish**, além de começar uma nova linha ou trocar a abertura |
+
+Também foi descartada uma causa técnica: o `chess.js` 1.4.0 aplica normalmente o lance do Stockfish com `promotion: 'q'` num lance que não é promoção, que é como o playout aplica as respostas.
 
 ### Fase 6 — Documentação ✅
 

@@ -186,10 +186,10 @@ Fluxo completo:
 2. **Apresentação pelo treinador (LLM)**: ideia, planos para o lado do aluno, estrutura de peões, cuidados e como treinar, ancorada na linha de referência, nas principais variantes e na avaliação do Stockfish. É opcional e continua disponível durante o treino.
 3. **Drill** das linhas, com dica e seta.
 4. **Confirmação ao sair da teoria**, com a avaliação do Stockfish do lance.
-5. **Partida contra o Stockfish** depois da teoria, com a precisão dos lances fora dela.
+5. **Partida contra o Stockfish** depois da teoria, com a precisão dos lances fora dela. Pode começar a qualquer momento: no fim da linha, ao confirmar a saída da teoria, pelo botão "Jogar contra o Stockfish a partir daqui" no drill ou pelo resumo da sessão.
 6. **"Por que esse lance?"**: explicação da LLM de qualquer lance teórico da linha, seu ou do oponente.
 7. **Progresso por variante**: porcentagem geral e por variante/subvariante, lista de linhas concluídas e pendentes, e um clique para treinar uma linha específica.
-8. **Resumo da sessão**.
+8. **Resumo da sessão** (botão "Resumo da sessão" na barra superior): não encerra nada; dá para voltar de onde parou.
 
 Detalhes de implementação em [07-modo-repertorio.md](07-modo-repertorio.md).
 

@@ -5,12 +5,12 @@ Documentação técnica do estado atual do projeto, extraída diretamente da lei
 | Sincronização | |
 |---|---|
 | Branch | `feat/learn-repertoire` (criada a partir da `develop`, que já contém a `feat/training-game`) |
-| Último commit coberto | `beca22e` — *feat: show repertoire progress per variation and train a chosen line* |
-| Data | 2026-11-11 |
+| Último commit coberto | `3d79911` — *fix: let the repertoire drill hand over to Stockfish at any point* |
+| Data | 2026-11-12 |
 | Alterações não commitadas consideradas | nenhuma |
-| Situação | Modo **Aprender repertório** implementado (todas as fases); falta o teste manual no navegador antes do PR — ver [07-modo-repertorio.md](07-modo-repertorio.md) |
+| Situação | Modo **Aprender repertório** implementado; primeiro teste manual feito e corrigido (`3d79911`); falta repetir o roteiro completo antes do PR — ver [07-modo-repertorio.md](07-modo-repertorio.md) |
 
-Para saber o que mudou no código desde esta documentação: `git log --oneline beca22e..HEAD` e `git diff beca22e HEAD --stat`.
+Para saber o que mudou no código desde esta documentação: `git log --oneline 3d79911..HEAD` e `git diff 3d79911 HEAD --stat`.
 
 ## Princípio central
 

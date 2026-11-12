@@ -7,6 +7,7 @@ import LLMSettings from './LLMSettings'
 import GameReport from './GameReport'
 import type { CoachReport, GameStats } from './GameReport'
 import { API_BASE_URL } from '../api'
+import { cloneGame, plyFromFen } from '../chess/utils'
 import type { LLMConfig } from '../llmConfig'
 import ReactMarkdown from 'react-markdown'
 
@@ -85,12 +86,6 @@ interface ReportContext {
   imported: boolean
 }
 
-// Half-move index of the side to move in a FEN: 0 = White's first move.
-const plyFromFen = (fen: string): number => {
-  const [, turn, , , , fullmove] = fen.split(' ')
-  return (Number(fullmove) - 1) * 2 + (turn === 'b' ? 1 : 0)
-}
-
 const MIN_MOVES_FOR_REPORT = 3
 
 function describeResult(game: Chess, termination: string, userColor: PlayerColor): { result: string; label: string } {
@@ -123,14 +118,6 @@ function describeImportedResult(result?: string): string {
 function importedName(game: Chess, header: 'White' | 'Black', fallback: string): string {
   const name = game.getHeaders()[header]
   return name && name !== '?' ? name : fallback
-}
-
-// Copies a game with its move history (new Chess(fen) would keep only the position, so the
-// final PGN would lose the opening moves and start from a FEN).
-function cloneGame(game: Chess): Chess {
-  const copy = new Chess()
-  copy.loadPgn(game.pgn())
-  return copy
 }
 
 function detectTermination(game: Chess): string {

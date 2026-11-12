@@ -252,6 +252,20 @@ button {
 .repertoire-colors button.active{border-color:var(--gold);background:#2d3327;color:var(--gold-light)}
 .repertoire-colors small{font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--gold)}
 
+/* Learn repertoire: drill */
+.repertoire-coach{display:flex;flex-direction:column;gap:4px}
+.repertoire-coach .message{margin:6px 0}
+.repertoire-coach .message b{color:var(--gold-light);font-weight:600}
+.repertoire-actions{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.repertoire-actions .full{padding:12px}
+.repertoire-error{background:#202520;border:1px solid #30372e;border-radius:5px;padding:9px 11px;display:flex;flex-direction:column;gap:3px}
+.repertoire-error b{font-size:12px;font-weight:600;color:#c1c5bd}
+.repertoire-error span{font-size:10px;color:#8b9487}
+.repertoire-offbook{text-align:left;font-size:12px;line-height:1.6;color:#c1c5bd;background:#202520;border:1px solid #30372e;border-radius:6px;padding:12px 14px;margin-bottom:6px}
+.repertoire-offbook p{margin:4px 0}
+.repertoire-offbook b{color:var(--gold-light)}
+.move-row button:disabled{cursor:default;color:#aeb3a9}
+
 @media(max-width:1050px){
   .game-layout{grid-template-columns:220px minmax(440px,1fr) 285px}
   .landing{padding:0 4vw}

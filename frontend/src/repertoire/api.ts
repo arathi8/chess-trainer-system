@@ -35,14 +35,40 @@ export interface RepertoireTree {
   tree: RepertoireNode
 }
 
-async function getJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`)
+// Mirrors EngineAnalysisResponse (/api/engine-analysis). Evaluations are from White's point of view.
+export interface PositionAnalysis {
+  fen: string
+  best_move: string
+  evaluation: string
+  depth: number
+  line: string
+}
+
+export interface MoveAnalysis {
+  before_move_analysis: PositionAnalysis
+  after_move_analysis: PositionAnalysis
+  move_classification: string
+  move_delta: number
+}
+
+async function requestJson<T>(path: string, body?: unknown): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, body === undefined ? undefined : {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  })
   const data = await response.json().catch(() => null)
   if (!response.ok) {
     throw new Error(data?.detail ?? `HTTP error: ${response.status}`)
   }
   return data as T
 }
+
+const getJson = <T>(path: string) => requestJson<T>(path)
+
+// Stockfish evaluation of one move (two depth-20 searches, a few seconds).
+export const fetchMoveAnalysis = (fen: string, move: string): Promise<MoveAnalysis> =>
+  requestJson<MoveAnalysis>('/engine-analysis', { fen, move })
 
 export async function fetchRepertoireCatalog(): Promise<RepertoireFamily[]> {
   const data = await getJson<{ families: RepertoireFamily[] }>('/repertoire/catalog')

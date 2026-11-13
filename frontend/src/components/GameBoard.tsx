@@ -141,6 +141,9 @@ export default function GameBoard({
   const [stats, setStats] = useState<GameStats | null>(null)
   const [statsLoading, setStatsLoading] = useState(false)
   const [coachReport, setCoachReport] = useState<CoachReport>({ text: null, error: null, loading: false })
+  // Whether the user picked a move after the game ended: the coach does not open on the move
+  // selected by default.
+  const [movePicked, setMovePicked] = useState(false)
   const [reportMessage, setReportMessage] = useState<string | null>(null)
 
   // The game's moves, and the one shown on the board. The tree also lives in a ref: async work
@@ -173,6 +176,8 @@ export default function GameBoard({
   const autoAnalysisStartedRef = useRef(false)
   const gameStartedRef = useRef(false)
   const moveCoachRef = useRef<HTMLDivElement>(null)
+  // Set by a pick in the history: the coach is scrolled into view once the render has placed it.
+  const scrollToCoachRef = useRef(false)
 
   // Plies are 0-based half-moves: even = White's moves.
   const isUserPly = (ply: number) => (ply % 2 === 0) === (userColor === 'white')
@@ -500,6 +505,7 @@ export default function GameBoard({
     const finalGame = gameRef.current
     const { result, label } = describeResult(finalGame, termination, userColor)
     setGameFinished(true)
+    setMovePicked(false)
     setResultLabel(label)
     setIsEngineThinking(false)
     setStatsLoading(true)
@@ -559,18 +565,60 @@ export default function GameBoard({
   // After the game, picking a move in the history brings the per-move coach into view.
   const selectMove = (id: string) => {
     setCursorId(id)
-    if (gameFinished && id !== ROOT) {
-      moveCoachRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }
+    setMovePicked(id !== ROOT)
+    scrollToCoachRef.current = gameFinished && id !== ROOT
   }
+
+  useEffect(() => {
+    if (!scrollToCoachRef.current) return
+    scrollToCoachRef.current = false
+    moveCoachRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [cursorId])
 
   // The move on the board: its squares are highlighted, and after the game the coach explains it (either side's).
   const selectedNode = cursorId !== ROOT ? tree.nodes[cursorId] : undefined
-  const selectedIsUsers = selectedNode ? isUserPly(selectedNode.ply) : false
-  const explanation = explanations[cursorId]
   const explaining = explainingId !== null
 
   const displayFen = fenAt(tree, cursorId)
+
+  // The per-move coach, above the report: shown when the user picks a move that is already
+  // classified, whether or not the report is ready.
+  const coachNode = gameFinished && movePicked && selectedNode?.analysis ? selectedNode : undefined
+  const explanation = coachNode && explanations[coachNode.id]
+  const moveCoach = coachNode && (
+    <div className="move-coach" ref={moveCoachRef}>
+      <span className="eyebrow small">ANÁLISE POR LANCE</span>
+
+      <p className="move-coach-target">
+        Lance selecionado: <b>{moveNumberLabel(coachNode.ply)} {coachNode.san}</b>
+        {' '}({isUserPly(coachNode.ply) ? 'seu' : 'do oponente'})
+      </p>
+
+      <button
+        className="outline-btn move-coach-btn"
+        onClick={() => explainMove(coachNode)}
+        disabled={explaining}
+      >
+        {explaining ? 'Analisando...' : 'Avaliar lance selecionado'}
+      </button>
+
+      {opponentAnalysing && (
+        <p className="message system">Classificando os lances do oponente...</p>
+      )}
+
+      {explainingId === coachNode.id && (
+        <p className="message system" style={{ color: '#d0af68' }}>
+          🤔 Analisando o lance...
+        </p>
+      )}
+
+      {explanation && explainingId !== coachNode.id && (
+        <div className="message markdown-body">
+          <ReactMarkdown>{explanation}</ReactMarkdown>
+        </div>
+      )}
+    </div>
+  )
 
   return (
     <main className="game-shell">
@@ -737,6 +785,8 @@ export default function GameBoard({
               </p>
             )}
 
+            {moveCoach}
+
             {gameFinished && !importProgress && (
               <GameReport
                 result={resultLabel}
@@ -751,51 +801,6 @@ export default function GameBoard({
                 onRetry={requestCoachReport}
                 onConfigureLLM={() => setLlmSettingsOpen(true)}
               />
-            )}
-
-            {gameFinished && (
-              <div className="move-coach" ref={moveCoachRef}>
-                <span className="eyebrow small">ANÁLISE POR LANCE</span>
-
-                <p className="move-coach-target">
-                  {selectedNode
-                    ? <>
-                        Lance selecionado: <b>{moveNumberLabel(selectedNode.ply)} {selectedNode.san}</b>
-                        {' '}({selectedIsUsers ? 'seu' : 'do oponente'})
-                      </>
-                    : 'Selecione um lance no histórico (seu ou do oponente) para pedir a explicação do treinador.'}
-                </p>
-
-                <button
-                  className="outline-btn move-coach-btn"
-                  onClick={() => selectedNode && explainMove(selectedNode)}
-                  disabled={explaining || !selectedNode?.analysis}
-                >
-                  {explaining
-                    ? 'Analisando...'
-                    : !selectedNode
-                      ? 'Selecione um lance'
-                      : !selectedNode.analysis
-                        ? (opponentAnalysing ? 'Classificando lance...' : 'Lance sem classificação')
-                        : 'Avaliar lance selecionado'}
-                </button>
-
-                {opponentAnalysing && (
-                  <p className="message system">Classificando os lances do oponente...</p>
-                )}
-
-                {explainingId === cursorId && (
-                  <p className="message system" style={{ color: '#d0af68' }}>
-                    🤔 Analisando o lance...
-                  </p>
-                )}
-
-                {explanation && explainingId !== cursorId && (
-                  <div className="message markdown-body">
-                    <ReactMarkdown>{explanation}</ReactMarkdown>
-                  </div>
-                )}
-              </div>
             )}
           </div>
         </aside>

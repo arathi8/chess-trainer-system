@@ -182,7 +182,7 @@ button {
 .report-error{background:#3d2020;border:1px solid #5a2a2a;border-radius:6px;padding:10px 12px;margin-top:14px;font-size:11px;color:#ff9b9b}
 .report-error p{margin:0 0 10px}
 .report-error>div{display:flex;gap:8px;flex-wrap:wrap}
-.move-coach{margin-top:4px;scroll-margin-top:12px}
+.move-coach{margin:0 0 22px;padding-bottom:18px;border-bottom:1px solid #2a2e2a;scroll-margin-top:12px}
 .move-coach-target{font-size:11px;line-height:1.5;color:#aeb3a9;margin:8px 0 10px}
 .move-coach-target b{color:var(--gold-light);font-weight:600}
 .move-coach-btn{width:100%;justify-content:center}

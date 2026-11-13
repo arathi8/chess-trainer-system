@@ -256,3 +256,19 @@ button {
 .moves .move-inaccuracy{color:#e9bd5a}
 .moves .move-mistake{color:#e8913a}
 .moves .move-blunder{color:#e0524f}
+
+/* Coach panel animations. The move coach fades in and out quickly, and the report slides to make
+   room for it (useSlideOnShift). The report's sections and the texts inside the coach rise in
+   slowly, the stats cards one after another. */
+@keyframes block-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+@keyframes block-out{from{opacity:1;transform:none}to{opacity:0;transform:translateY(-4px)}}
+@keyframes block-rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.move-coach{animation:block-in .3s ease-out both}
+/* Leaving (COACH_FADE_OUT_MS in GameBoard.tsx): fades out, then the report slides up into its place. */
+.move-coach.leaving{animation:block-out .25s ease-in both;pointer-events:none}
+.move-coach .message,.game-report>*{animation:block-rise 0.5s cubic-bezier(.22,.61,.36,1) both}
+.game-report>.report-opening{animation-delay:.08s}
+.game-report>.report-counts{animation-delay:.16s}
+.game-report>.report-phases{animation-delay:.24s}
+.game-report>.report-moments{animation-delay:.32s}
+@media (prefers-reduced-motion:reduce){.move-coach,.move-coach.leaving,.move-coach .message,.game-report>*{animation:none}}

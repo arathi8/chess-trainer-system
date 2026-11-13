@@ -7,6 +7,8 @@ import LLMSettings from './LLMSettings'
 import GameReport from './GameReport'
 import MoveList from './MoveList'
 import BoardControls from './BoardControls'
+import { useSlideOnShift } from '../useSlideOnShift'
+import { useExitTransition } from '../useExitTransition'
 import type { CoachReport, GameStats } from './GameReport'
 import { API_BASE_URL } from '../api'
 import type { LLMConfig } from '../llmConfig'
@@ -20,6 +22,8 @@ export type GameMode = 'training' | 'review'
 
 // Engine analyses running at once when analysing an imported game.
 const IMPORT_ANALYSIS_CONCURRENCY = 2
+// Matches the .move-coach.leaving fade in index.css.
+const COACH_FADE_OUT_MS = 150
 
 interface GameBoardProps {
   initialGame?: Chess
@@ -178,6 +182,7 @@ export default function GameBoard({
   const moveCoachRef = useRef<HTMLDivElement>(null)
   // Set by a pick in the history: the coach is scrolled into view once the render has placed it.
   const scrollToCoachRef = useRef(false)
+  const reportSlideRef = useSlideOnShift<HTMLDivElement>()
 
   // Plies are 0-based half-moves: even = White's moves.
   const isUserPly = (ply: number) => (ply % 2 === 0) === (userColor === 'white')
@@ -582,11 +587,14 @@ export default function GameBoard({
   const displayFen = fenAt(tree, cursorId)
 
   // The per-move coach, above the report: shown when the user picks a move that is already
-  // classified, whether or not the report is ready.
-  const coachNode = gameFinished && movePicked && selectedNode?.analysis ? selectedNode : undefined
+  // classified, whether or not the report is ready. It fades in when it appears and stays in place
+  // (no fade) while the user moves between classified moves; when it goes away it fades out
+  // showing the move it had.
+  const pickedClassified = gameFinished && movePicked && selectedNode?.analysis ? selectedNode : undefined
+  const { value: coachNode, leaving: coachLeaving } = useExitTransition(pickedClassified, COACH_FADE_OUT_MS)
   const explanation = coachNode && explanations[coachNode.id]
   const moveCoach = coachNode && (
-    <div className="move-coach" ref={moveCoachRef}>
+    <div className={`move-coach${coachLeaving ? ' leaving' : ''}`} ref={moveCoachRef}>
       <span className="eyebrow small">ANÁLISE POR LANCE</span>
 
       <p className="move-coach-target">
@@ -597,7 +605,7 @@ export default function GameBoard({
       <button
         className="outline-btn move-coach-btn"
         onClick={() => explainMove(coachNode)}
-        disabled={explaining}
+        disabled={explaining || coachLeaving}
       >
         {explaining ? 'Analisando...' : 'Avaliar lance selecionado'}
       </button>
@@ -788,19 +796,21 @@ export default function GameBoard({
             {moveCoach}
 
             {gameFinished && !importProgress && (
-              <GameReport
-                result={resultLabel}
-                stats={stats}
-                statsLoading={statsLoading}
-                coach={coachReport}
-                message={reportMessage}
-                onSelectMoment={(_fen, ply) => {
-                  const node = mainline(tree).find(move => move.ply === ply)
-                  if (node) selectMove(node.id)
-                }}
-                onRetry={requestCoachReport}
-                onConfigureLLM={() => setLlmSettingsOpen(true)}
-              />
+              <div ref={reportSlideRef}>
+                <GameReport
+                  result={resultLabel}
+                  stats={stats}
+                  statsLoading={statsLoading}
+                  coach={coachReport}
+                  message={reportMessage}
+                  onSelectMoment={(_fen, ply) => {
+                    const node = mainline(tree).find(move => move.ply === ply)
+                    if (node) selectMove(node.id)
+                  }}
+                  onRetry={requestCoachReport}
+                  onConfigureLLM={() => setLlmSettingsOpen(true)}
+                />
+              </div>
             )}
           </div>
         </aside>

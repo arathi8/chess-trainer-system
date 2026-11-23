@@ -253,7 +253,14 @@ button {
 .variation-move,.variation-nested{display:inline-flex;flex-wrap:wrap;align-items:center}
 .variation-nested{color:#5d655b;font-size:11px;margin:0 2px}
 .variation button{background:none;border:0;color:#8b9487;font-size:11px;padding:1px 3px;border-radius:3px;display:inline-flex;align-items:center;gap:4px}
-.variation button:hover{color:#e5e4db}
+/* Hovering a move lights it with a faint gold tint (distinct from the neutral selection), so it
+   reads as clickable; an unclassified move's text also brightens. */
+.moves button{transition:background-color .12s ease,color .12s ease}
+.move-row button:not(:disabled):hover,.variation button:hover,.start-move:hover{background:#b8955724;border-radius:4px}
+/* Only unclassified moves (no classification title) brighten: classified ones keep their colour. */
+.move-row button:not(:disabled):not([title]):hover,.variation button:not([title]):hover{color:#e5e4db}
+.start-move:hover{color:#aeb3a9}
+.move-row button:disabled{cursor:default}
 /* History: the current move gets a faint background, so it does not compete with the classification colours. */
 .moves .selected-move{background:#ffffff0d;border-radius:4px;color:#e5e4db}
 .start-move.selected-move{color:#aeb3a9}

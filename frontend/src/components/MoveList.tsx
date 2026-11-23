@@ -59,7 +59,13 @@ export default function MoveList({ tree, cursorId, showBadges, onSelect }: MoveL
   const moveTitle = (move: MoveNode) => (classification(move) ? move.analysis?.classification : undefined)
 
   const rowCell = (move: MoveNode | undefined, filler: boolean) => (
-    <button className={move && moveClass(move)} title={move && moveTitle(move)} onClick={() => move && onSelect(move.id)}>
+    // An empty cell (no move yet, or a "…" filler) is not clickable, and does not light up on hover.
+    <button
+      className={move && moveClass(move)}
+      title={move && moveTitle(move)}
+      disabled={!move}
+      onClick={() => move && onSelect(move.id)}
+    >
       {move ? <b>{move.san}{classification(move)?.glyph}</b> : filler && <span className="ellipsis">…</span>}
     </button>
   )

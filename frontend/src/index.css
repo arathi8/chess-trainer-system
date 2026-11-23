@@ -273,4 +273,12 @@ button {
 .game-report>.report-counts{animation-delay:.16s}
 .game-report>.report-phases{animation-delay:.24s}
 .game-report>.report-moments{animation-delay:.32s}
-@media (prefers-reduced-motion:reduce){.move-coach,.move-coach.leaving,.move-coach .message,.game-report>*{animation:none}}
+
+/* Dialogs fade in, the card rising slightly. */
+@keyframes fade-in{from{opacity:0}to{opacity:1}}
+.modal-backdrop{animation:fade-in .2s ease-out both}
+.modal-card{animation:block-rise .2s cubic-bezier(.20,.40,.10,.5) both}
+
+@media (prefers-reduced-motion:reduce){
+  .move-coach,.move-coach.leaving,.move-coach .message,.game-report>*,.modal-backdrop,.modal-card{animation:none}
+}

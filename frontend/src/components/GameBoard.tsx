@@ -7,6 +7,7 @@ import LLMSettings from './LLMSettings'
 import GameReport from './GameReport'
 import MoveList from './MoveList'
 import BoardControls from './BoardControls'
+import ConfirmDialog from './ConfirmDialog'
 import { useSlideOnShift } from '../useSlideOnShift'
 import { useExitTransition } from '../useExitTransition'
 import type { CoachReport, GameStats } from './GameReport'
@@ -130,6 +131,7 @@ export default function GameBoard({
   const [game, setGame] = useState<Chess>(initialGame || new Chess())
   const [isEngineThinking, setIsEngineThinking] = useState(false)
   const [llmSettingsOpen, setLlmSettingsOpen] = useState(false)
+  const [resignOpen, setResignOpen] = useState(false)
 
   const isReview = mode === 'review'
 
@@ -545,11 +547,9 @@ export default function GameBoard({
     analyseImportedGame()
   }, [])
 
-  const handleResign = () => {
-    if (gameFinished) return
-    if (window.confirm('Encerrar a partida e ver o relatório?')) {
-      finishGame('resignation')
-    }
+  const confirmResign = () => {
+    setResignOpen(false)
+    finishGame('resignation')
   }
 
   useEffect(() => {
@@ -638,7 +638,7 @@ export default function GameBoard({
 
         <div className="top-actions">
           {!gameFinished && (
-            <button className="outline-btn" onClick={handleResign}>
+            <button className="outline-btn" onClick={() => setResignOpen(true)}>
               Encerrar partida
             </button>
           )}
@@ -736,7 +736,7 @@ export default function GameBoard({
           <BoardControls
             canGoBack={cursorId !== ROOT}
             canGoForward={cursorId !== lineEnd(tree, cursorId)}
-            keyboard={!llmSettingsOpen}
+            keyboard={!llmSettingsOpen && !resignOpen}
             onNavigate={onNavigate}
           />
 
@@ -815,6 +815,17 @@ export default function GameBoard({
           </div>
         </aside>
       </div>
+
+      {resignOpen && (
+        <ConfirmDialog
+          eyebrow="ENCERRAR PARTIDA"
+          title="Encerrar a partida?"
+          description="A partida será encerrada como abandono, e o relatório com a análise dos seus lances será gerado."
+          confirmLabel="Encerrar e ver o relatório"
+          onConfirm={confirmResign}
+          onCancel={() => setResignOpen(false)}
+        />
+      )}
 
       {llmSettingsOpen && (
         <LLMSettings

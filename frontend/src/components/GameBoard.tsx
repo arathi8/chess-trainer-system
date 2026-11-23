@@ -69,6 +69,12 @@ const MIN_MOVES_FOR_REPORT = 3
 // Tints the origin and destination squares of the move on the board, as lichess does.
 const LAST_MOVE_STYLE = { backgroundColor: 'rgba(155, 199, 0, 0.41)' }
 
+// A player's pawn. On the dark background the solid glyph (♟) reads as the light, white piece and
+// the hollow one (♙) as the black piece, the reverse of their Unicode names.
+const PlayerPiece = ({ color }: { color: PlayerColor }) => (
+  <span className="player-piece" aria-hidden="true">{color === 'white' ? '♟' : '♙'}</span>
+)
+
 const lastMoveStyles = (move?: MoveNode) =>
   move ? { [move.from]: LAST_MOVE_STYLE, [move.to]: LAST_MOVE_STYLE } : {}
 
@@ -728,9 +734,7 @@ export default function GameBoard({
 
           <div className="players">
             <div>
-              <span className="player-piece">
-                {userColor === 'white' ? '♟' : '♙'}
-              </span>
+              <PlayerPiece color={userColor === 'white' ? 'black' : 'white'} />
 
               <div>
                 <b>{isReview ? importedName(game, userColor === 'white' ? 'Black' : 'White', 'Oponente') : 'Stockfish'}</b>
@@ -796,9 +800,7 @@ export default function GameBoard({
 
           <div className="players bottom">
             <div>
-              <span className="player-piece">
-                {userColor === 'white' ? '♙' : '♟'}
-              </span>
+              <PlayerPiece color={userColor} />
 
               <div>
                 <b>{isReview ? importedName(game, userColor === 'white' ? 'White' : 'Black', 'Você') : 'You'}</b>

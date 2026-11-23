@@ -106,7 +106,7 @@ button {
 .compact .brand-mark{font-size:25px}
 .icon-btn,.dots{background:none;border:0;color:#8d958b}
 
-.game-layout{display:grid;grid-template-columns:270px minmax(500px,1fr) 330px;max-width:1450px;margin:0 auto;min-height:calc(100vh - 76px)}
+.game-layout{display:grid;grid-template-columns:270px minmax(500px,1fr) 330px;grid-template-rows:minmax(0,1fr);max-width:1450px;margin:0 auto;min-height:calc(100vh - 76px)}
 .history-panel,.chat-panel{background:#181b19;border-right:1px solid #2a2e2a}
 .chat-panel{border-right:0;border-left:1px solid #2a2e2a;display:flex;flex-direction:column}
 .panel-title,.chat-head{padding:26px 22px 20px;display:flex;justify-content:space-between;align-items:flex-start}
@@ -129,23 +129,28 @@ button {
 .tag.mistake{background:#e58f2a;color:#fff}
 .tag.blunder{background:#ca3431;color:#fff}
 
-.center-stage{padding:33px clamp(24px,4vw,70px);max-width:780px;margin:0 auto;width:100%}
-.stage-head{display:flex;justify-content:space-between;align-items:end;margin-bottom:24px}
+.center-stage{padding:24px clamp(24px,4vw,70px) 16px;max-width:780px;margin:0 auto;width:100%;min-height:0;display:flex;flex-direction:column}
+.stage-head{display:flex;justify-content:space-between;align-items:end;margin-bottom:16px}
 .stage-head h1{font-size:25px;margin:10px 0 0;font-weight:500}
 .players{display:flex;justify-content:space-between;align-items:center;margin-bottom:11px}
 .players>div:first-child{display:flex;align-items:center;gap:10px}
 .player-piece{font-size:25px}
+.players small.thinking{color:#d0af68}
 .players b{display:block;font-size:12px;font-weight:600}
 .players small{display:block;color:#767e74;font-size:10px;margin-top:3px}
 
-.board-wrap{position:relative;padding-left:20px;padding-bottom:20px;max-width:600px;margin:0 auto}
+/* The opponent, the board, the player and the controls, centred in the room left; the board is
+   the largest square that fits (--board-size, from useFitSquare), so the centre never scrolls. */
+.board-area{flex:1 1 0;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.board-area>*{width:var(--board-size,100%);flex-shrink:0}
+.board-wrap{position:relative;padding-left:20px;padding-bottom:20px}
 .chessboard-container{box-shadow:0 14px 35px #0008;border:7px solid #28281f;}
 .rank-labels{position:absolute;left:3px;top:7px;bottom:27px;display:flex;flex-direction:column;justify-content:space-around;color:#8b7044;font-size:10px}
 .file-labels{position:absolute;bottom:1px;left:26px;right:7px;display:flex;justify-content:space-around;color:#8b7044;font-size:10px}
 .board-controls{display:flex;align-items:center;justify-content:center;gap:8px;margin:24px 0;position:relative}
 .board-controls button{background:#202520;border:1px solid #30372f;color:#9ca59a;border-radius:5px;padding:7px 9px;display:grid;place-items:center}
 .turn-label{position:absolute;right:0;color:#6e776d;font-size:9px;letter-spacing:1px}
-.bottom{margin-top:0}
+.players.bottom{margin:11px 0 0}
 
 .chat-head{align-items:center;padding-bottom:17px;border-bottom:1px solid #2a2e2a}
 .bot-avatar{display:grid;place-items:center;background:#b89557;color:#1e211a;border-radius:50%;width:33px;height:33px;margin-right:10px}
@@ -233,11 +238,13 @@ button {
   .game-layout{display:flex;flex-direction:column}
   .history-panel{order:2;border-right:0;border-top:1px solid #2a2e2a}
   .center-stage{order:1;padding:24px 16px}
+  .board-area{flex:none}
+  .board-area>*{width:min(100%,560px)}
   .chat-panel{order:3;border-left:0;border-top:1px solid #2a2e2a;min-height:460px;overflow:visible}
   .game-shell{height:auto;overflow:visible}
   .chat-content{overflow:visible}
 }
-.board-controls{display:flex;justify-content:center;gap:6px;margin-top:12px}
+.board-controls{display:flex;justify-content:center;gap:6px;margin:12px 0 0}
 .board-controls .outline-btn{padding:8px 0;width:64px}
 .board-controls .outline-btn:disabled{opacity:.35;cursor:default}
 .move-row .ellipsis{color:#5d655b}

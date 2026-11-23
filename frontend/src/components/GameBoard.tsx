@@ -9,6 +9,7 @@ import GameReport from './GameReport'
 import MoveList from './MoveList'
 import BoardControls from './BoardControls'
 import ConfirmDialog from './ConfirmDialog'
+import { useFitSquare } from '../useFitSquare'
 import { useSlideOnShift } from '../useSlideOnShift'
 import { useExitTransition } from '../useExitTransition'
 import type { CoachReport, GameStats } from './GameReport'
@@ -207,6 +208,8 @@ export default function GameBoard({
   const gameStartedRef = useRef(false)
   const moveCoachRef = useRef<HTMLDivElement>(null)
   const reportSlideRef = useSlideOnShift<HTMLDivElement>()
+  // The board fills its area: the largest square that fits, so the centre never scrolls.
+  const { ref: boardAreaRef, size: boardAreaSize } = useFitSquare<HTMLDivElement>()
 
   // Plies are 0-based half-moves: even = White's moves.
   const isUserPly = (ply: number) => (ply % 2 === 0) === (userColor === 'white')
@@ -732,81 +735,79 @@ export default function GameBoard({
             </div>
           </div>
 
-          <div className="players">
-            <div>
-              <PlayerPiece color={userColor === 'white' ? 'black' : 'white'} />
-
+          <div
+            className="board-area"
+            ref={boardAreaRef}
+            style={boardAreaSize ? { '--board-size': `${boardAreaSize}px` } as CSSProperties : undefined}
+          >
+            <div className="players">
               <div>
-                <b>{isReview ? importedName(game, userColor === 'white' ? 'Black' : 'White', 'Oponente') : 'Stockfish'}</b>
-                <small>{isReview ? 'Oponente' : 'Engine'}</small>
+                <PlayerPiece color={userColor === 'white' ? 'black' : 'white'} />
+
+                <div>
+                  <b>{isReview ? importedName(game, userColor === 'white' ? 'Black' : 'White', 'Oponente') : 'Stockfish'}</b>
+                  <small className={isEngineThinking && !viewingPast ? 'thinking' : undefined}>
+                    {isReview ? 'Oponente' : isEngineThinking && !viewingPast ? 'Engine pensando...' : 'Engine'}
+                  </small>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="board-wrap">
-            <div className="rank-labels">
-              {(userColor === 'white'
-                ? [8, 7, 6, 5, 4, 3, 2, 1]
-                : [1, 2, 3, 4, 5, 6, 7, 8]
-              ).map(r => (
-                <span key={r}>{r}</span>
-              ))}
-            </div>
+            <div className="board-wrap" data-fit>
+              <div className="rank-labels">
+                {(userColor === 'white'
+                  ? [8, 7, 6, 5, 4, 3, 2, 1]
+                  : [1, 2, 3, 4, 5, 6, 7, 8]
+                ).map(r => (
+                  <span key={r}>{r}</span>
+                ))}
+              </div>
 
-            <div className="chessboard-container">
-              <Chessboard
-                options={{
-                  position: displayFen,
-                  squareStyles: {
-                    ...lastMoveStyles(selectedNode),
-                    ...(activePick && pickedStyles(displayFen, activePick))
-                  },
-                  boardOrientation: userColor,
-                  onPieceDrop: ({ sourceSquare, targetSquare }) =>
-                    Boolean(sourceSquare && targetSquare) &&
-                    boardHandlersRef.current.onDrop(sourceSquare as Square, targetSquare as Square),
-                  onSquareClick: ({ square, piece }) =>
-                    boardHandlersRef.current.onSquareClick(square as Square, piece?.pieceType)
-                }}
-              />
-            </div>
+              <div className="chessboard-container">
+                <Chessboard
+                  options={{
+                    position: displayFen,
+                    squareStyles: {
+                      ...lastMoveStyles(selectedNode),
+                      ...(activePick && pickedStyles(displayFen, activePick))
+                    },
+                    boardOrientation: userColor,
+                    onPieceDrop: ({ sourceSquare, targetSquare }) =>
+                      Boolean(sourceSquare && targetSquare) &&
+                      boardHandlersRef.current.onDrop(sourceSquare as Square, targetSquare as Square),
+                    onSquareClick: ({ square, piece }) =>
+                      boardHandlersRef.current.onSquareClick(square as Square, piece?.pieceType)
+                  }}
+                />
+              </div>
 
-            <div className="file-labels">
-              {(userColor === 'white'
-                ? ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
-                : ['h', 'g', 'f', 'e', 'd', 'c', 'b', 'a']
-              ).map(f => (
-                <span key={f}>{f}</span>
-              ))}
-            </div>
-          </div>
-
-          <BoardControls
-            canGoBack={cursorId !== ROOT}
-            canGoForward={cursorId !== lineEnd(tree, cursorId)}
-            keyboard={!llmSettingsOpen && !resignOpen}
-            onNavigate={onNavigate}
-          />
-
-          {isEngineThinking && !viewingPast && (
-            <p style={{
-              textAlign: 'center',
-              color: '#8b9487',
-              marginTop: 12
-            }}>
-              Engine pensando...
-            </p>
-          )}
-
-          <div className="players bottom">
-            <div>
-              <PlayerPiece color={userColor} />
-
-              <div>
-                <b>{isReview ? importedName(game, userColor === 'white' ? 'White' : 'Black', 'Você') : 'You'}</b>
-                <small>Jogador</small>
+              <div className="file-labels">
+                {(userColor === 'white'
+                  ? ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+                  : ['h', 'g', 'f', 'e', 'd', 'c', 'b', 'a']
+                ).map(f => (
+                  <span key={f}>{f}</span>
+                ))}
               </div>
             </div>
+
+            <div className="players bottom">
+              <div>
+                <PlayerPiece color={userColor} />
+
+                <div>
+                  <b>{isReview ? importedName(game, userColor === 'white' ? 'White' : 'Black', 'Você') : 'You'}</b>
+                  <small>Jogador</small>
+                </div>
+              </div>
+            </div>
+
+            <BoardControls
+              canGoBack={cursorId !== ROOT}
+              canGoForward={cursorId !== lineEnd(tree, cursorId)}
+              keyboard={!llmSettingsOpen && !resignOpen}
+              onNavigate={onNavigate}
+            />
           </div>
         </section>
 

@@ -1,3 +1,5 @@
+import { useEffect, useRef } from 'react'
+import type { MouseEvent } from 'react'
 import { ROOT, lineFrom, mainline, moveNumberLabel, variationsAt } from '../moveTree'
 import type { MoveNode, MoveTree } from '../moveTree'
 
@@ -48,6 +50,10 @@ interface MoveListProps {
   onSelect: (id: string) => void
 }
 
+// A mouse click does not leave the move focused: the arrow keys then step through the moves, and a
+// stale focus would show a focus ring there and replay that move on Enter.
+const keepFocusOff = (event: MouseEvent) => event.preventDefault()
+
 export default function MoveList({ tree, cursorId, showBadges, onSelect }: MoveListProps) {
   // Classifications stay hidden while a training game is running.
   const classification = (move: MoveNode) =>
@@ -58,12 +64,20 @@ export default function MoveList({ tree, cursorId, showBadges, onSelect }: MoveL
 
   const moveTitle = (move: MoveNode) => (classification(move) ? move.analysis?.classification : undefined)
 
+  // Keyboard focus (from Tab) follows the move shown, so Enter replays that move, not an earlier one.
+  const listRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const list = listRef.current
+    if (list?.contains(document.activeElement)) list.querySelector<HTMLElement>('.selected-move')?.focus()
+  }, [cursorId])
+
   const rowCell = (move: MoveNode | undefined, filler: boolean) => (
     // An empty cell (no move yet, or a "…" filler) is not clickable, and does not light up on hover.
     <button
       className={move && moveClass(move)}
       title={move && moveTitle(move)}
       disabled={!move}
+      onMouseDown={keepFocusOff}
       onClick={() => move && onSelect(move.id)}
     >
       {move ? <b>{move.san}{classification(move)?.glyph}</b> : filler && <span className="ellipsis">…</span>}
@@ -80,7 +94,7 @@ export default function MoveList({ tree, cursorId, showBadges, onSelect }: MoveL
       numbered = nested.length > 0
       return (
         <span key={move.id} className="variation-move">
-          <button className={moveClass(move)} title={moveTitle(move)} onClick={() => onSelect(move.id)}>
+          <button className={moveClass(move)} title={moveTitle(move)} onMouseDown={keepFocusOff} onClick={() => onSelect(move.id)}>
             {label}{move.san}{classification(move)?.glyph}
           </button>
           {nested.map(sub => (
@@ -92,8 +106,12 @@ export default function MoveList({ tree, cursorId, showBadges, onSelect }: MoveL
   }
 
   return (
-    <div className="moves">
-      <button className={`start-move${cursorId === ROOT ? ' selected-move' : ''}`} onClick={() => onSelect(ROOT)}>
+    <div className="moves" ref={listRef}>
+      <button
+        className={`start-move${cursorId === ROOT ? ' selected-move' : ''}`}
+        onMouseDown={keepFocusOff}
+        onClick={() => onSelect(ROOT)}
+      >
         JOGO INICIADO
       </button>
 

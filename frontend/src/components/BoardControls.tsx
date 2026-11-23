@@ -59,6 +59,8 @@ export default function BoardControls({ canGoBack, canGoForward, keyboard, onNav
           title={control.title}
           aria-label={control.title}
           disabled={!enabled(control.action)}
+          // A click leaves no focus behind, so Enter does not repeat it while the arrow keys navigate.
+          onMouseDown={event => event.preventDefault()}
           onClick={() => onNavigate(control.action)}
         >
           {control.icon}

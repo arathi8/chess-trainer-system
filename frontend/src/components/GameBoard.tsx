@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
 import type { Move } from 'chess.js'
 import { Chess } from 'chess.js'
 import type { Square } from 'chess.js'
@@ -586,6 +586,13 @@ export default function GameBoard({
 
   const displayFen = fenAt(tree, cursorId)
 
+  // react-chessboard keeps the drop handler it had when a drag started: a piece picked up while the
+  // engine was thinking would be dropped with that stale state. The board calls the latest handler.
+  const boardHandlersRef = useRef({ onDrop })
+  useLayoutEffect(() => {
+    boardHandlersRef.current = { onDrop }
+  })
+
   // The per-move coach, above the report: shown when the user picks a move that is already
   // classified, whether or not the report is ready. It fades in when it appears and stays in place
   // (no fade) while the user moves between classified moves; when it goes away it fades out
@@ -711,14 +718,9 @@ export default function GameBoard({
                   position: displayFen,
                   squareStyles: lastMoveStyles(selectedNode),
                   boardOrientation: userColor,
-                  onPieceDrop: ({ sourceSquare, targetSquare }) => {
-                    if (!sourceSquare || !targetSquare) return false
-
-                    return onDrop(
-                      sourceSquare as Square,
-                      targetSquare as Square
-                    )
-                  }
+                  onPieceDrop: ({ sourceSquare, targetSquare }) =>
+                    Boolean(sourceSquare && targetSquare) &&
+                    boardHandlersRef.current.onDrop(sourceSquare as Square, targetSquare as Square)
                 }}
               />
             </div>

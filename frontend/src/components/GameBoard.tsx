@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
+import type { CSSProperties } from 'react'
 import type { Move } from 'chess.js'
 import { Chess } from 'chess.js'
 import type { Square } from 'chess.js'
@@ -70,6 +71,19 @@ const LAST_MOVE_STYLE = { backgroundColor: 'rgba(155, 199, 0, 0.41)' }
 
 const lastMoveStyles = (move?: MoveNode) =>
   move ? { [move.from]: LAST_MOVE_STYLE, [move.to]: LAST_MOVE_STYLE } : {}
+
+// Click-to-move: the picked piece's square, and dots on the squares it can move to (rings on captures).
+const PICKED_STYLE = { backgroundColor: 'rgba(20, 85, 30, 0.5)' }
+const TARGET_STYLE = { background: 'radial-gradient(circle, rgba(20, 85, 30, 0.5) 19%, transparent 20%)' }
+const CAPTURE_STYLE = { background: 'radial-gradient(circle, transparent 79%, rgba(20, 85, 30, 0.45) 80%)' }
+
+function pickedStyles(fen: string, square: Square) {
+  const styles: Record<string, CSSProperties> = { [square]: PICKED_STYLE }
+  for (const move of new Chess(fen).moves({ square, verbose: true })) {
+    styles[move.to] = move.captured ? CAPTURE_STYLE : TARGET_STYLE
+  }
+  return styles
+}
 
 function describeResult(game: Chess, termination: string, userColor: PlayerColor): { result: string; label: string } {
   if (termination === 'resignation') {
@@ -150,6 +164,8 @@ export default function GameBoard({
   // Whether the user picked a move after the game ended: the coach does not open on the move
   // selected by default.
   const [movePicked, setMovePicked] = useState(false)
+  // Click-to-move: the square of the piece the user clicked, waiting for a target square.
+  const [pickedSquare, setPickedSquare] = useState<Square | null>(null)
   const [reportMessage, setReportMessage] = useState<string | null>(null)
 
   // The game's moves, and the one shown on the board. The tree also lives in a ref: async work
@@ -320,6 +336,7 @@ export default function GameBoard({
       return added.tree
     })
     setCursorId(id)
+    setPickedSquare(null)
     if (isNew) requestEngineAnalysis(id)
     return true
   }
@@ -348,6 +365,7 @@ export default function GameBoard({
       if (!move) return false
 
       setGame(gameCopy)
+      setPickedSquare(null)
       analyseInBackground(playMainlineMove(move))
 
       if (!gameCopy.isGameOver()) {
@@ -563,13 +581,17 @@ export default function GameBoard({
 
   // Reads the tree from its ref: stable, so the keyboard listener is not re-attached on every move.
   const onNavigate = useCallback(
-    (action: Navigation) => setCursorId(cursor => navigate(treeRef.current, cursor, action)),
+    (action: Navigation) => {
+      setCursorId(cursor => navigate(treeRef.current, cursor, action))
+      setPickedSquare(null)
+    },
     []
   )
 
   // After the game, picking a move in the history brings the per-move coach into view.
   const selectMove = (id: string) => {
     setCursorId(id)
+    setPickedSquare(null)
     setMovePicked(id !== ROOT)
     scrollToCoachRef.current = gameFinished && id !== ROOT
   }
@@ -586,11 +608,25 @@ export default function GameBoard({
 
   const displayFen = fenAt(tree, cursorId)
 
+  // Click-to-move picks the pieces of the side the user moves: during the game their own (even while
+  // the engine thinks, to move once it has replied), after it the side to move in the position shown.
+  const shownPosition = new Chess(displayFen)
+  const movableColor = gameFinished ? shownPosition.turn() : userColor === 'white' ? 'w' : 'b'
+  const canPick = gameFinished || (!viewingPast && !game.isGameOver())
+  const isPickable = (color?: string) => canPick && color === movableColor
+  // A pick whose piece has since been captured, or that no longer applies, is ignored.
+  const activePick = pickedSquare && isPickable(shownPosition.get(pickedSquare)?.color) ? pickedSquare : null
+
+  const onSquareClick = (square: Square, pieceType?: string) => {
+    if (activePick && square !== activePick && onDrop(activePick, square)) return
+    setPickedSquare(isPickable(pieceType?.[0]) && square !== activePick ? square : null)
+  }
+
   // react-chessboard keeps the drop handler it had when a drag started: a piece picked up while the
-  // engine was thinking would be dropped with that stale state. The board calls the latest handler.
-  const boardHandlersRef = useRef({ onDrop })
+  // engine was thinking would be dropped with that stale state. The board calls the latest handlers.
+  const boardHandlersRef = useRef({ onDrop, onSquareClick })
   useLayoutEffect(() => {
-    boardHandlersRef.current = { onDrop }
+    boardHandlersRef.current = { onDrop, onSquareClick }
   })
 
   // The per-move coach, above the report: shown when the user picks a move that is already
@@ -716,11 +752,16 @@ export default function GameBoard({
               <Chessboard
                 options={{
                   position: displayFen,
-                  squareStyles: lastMoveStyles(selectedNode),
+                  squareStyles: {
+                    ...lastMoveStyles(selectedNode),
+                    ...(activePick && pickedStyles(displayFen, activePick))
+                  },
                   boardOrientation: userColor,
                   onPieceDrop: ({ sourceSquare, targetSquare }) =>
                     Boolean(sourceSquare && targetSquare) &&
-                    boardHandlersRef.current.onDrop(sourceSquare as Square, targetSquare as Square)
+                    boardHandlersRef.current.onDrop(sourceSquare as Square, targetSquare as Square),
+                  onSquareClick: ({ square, piece }) =>
+                    boardHandlersRef.current.onSquareClick(square as Square, piece?.pieceType)
                 }}
               />
             </div>

@@ -282,3 +282,10 @@ button {
 @media (prefers-reduced-motion:reduce){
   .move-coach,.move-coach.leaving,.move-coach .message,.game-report>*,.modal-backdrop,.modal-card{animation:none}
 }
+
+/* Thin scrollbars without a track: just a translucent grey thumb over the panel. */
+*{scrollbar-width:thin;scrollbar-color:#8b948959 transparent}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#8b948959;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#8b94898c}

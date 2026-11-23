@@ -168,8 +168,8 @@ export default function GameBoard({
   const [stats, setStats] = useState<GameStats | null>(null)
   const [statsLoading, setStatsLoading] = useState(false)
   const [coachReport, setCoachReport] = useState<CoachReport>({ text: null, error: null, loading: false })
-  // Whether the user picked a move after the game ended: the coach does not open on the move
-  // selected by default.
+  // Whether the user picked or navigated to a move after the game ended: the coach does not open on
+  // the move selected by default.
   const [movePicked, setMovePicked] = useState(false)
   // Bumped by each pick in the history, even of the move already selected: scrolls to the coach.
   const [coachScrollRequest, setCoachScrollRequest] = useState(0)
@@ -589,10 +589,12 @@ export default function GameBoard({
   const viewingPast = cursorId !== tipId
 
   // Reads the tree from its ref: stable, so the keyboard listener is not re-attached on every move.
+  // Navigating counts as picking a move: after the game, the coach opens for a classified one.
   const onNavigate = useCallback(
     (action: Navigation) => {
       setCursorId(cursor => navigate(treeRef.current, cursor, action))
       setPickedSquare(null)
+      setMovePicked(true)
     },
     []
   )

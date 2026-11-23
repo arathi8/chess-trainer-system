@@ -164,6 +164,8 @@ export default function GameBoard({
   // Whether the user picked a move after the game ended: the coach does not open on the move
   // selected by default.
   const [movePicked, setMovePicked] = useState(false)
+  // Bumped by each pick in the history, even of the move already selected: scrolls to the coach.
+  const [coachScrollRequest, setCoachScrollRequest] = useState(0)
   // Click-to-move: the square of the piece the user clicked, waiting for a target square.
   const [pickedSquare, setPickedSquare] = useState<Square | null>(null)
   const [reportMessage, setReportMessage] = useState<string | null>(null)
@@ -198,8 +200,6 @@ export default function GameBoard({
   const autoAnalysisStartedRef = useRef(false)
   const gameStartedRef = useRef(false)
   const moveCoachRef = useRef<HTMLDivElement>(null)
-  // Set by a pick in the history: the coach is scrolled into view once the render has placed it.
-  const scrollToCoachRef = useRef(false)
   const reportSlideRef = useSlideOnShift<HTMLDivElement>()
 
   // Plies are 0-based half-moves: even = White's moves.
@@ -588,19 +588,20 @@ export default function GameBoard({
     []
   )
 
-  // After the game, picking a move in the history brings the per-move coach into view.
+  // After the game, picking a move in the history (again, if it is already selected) brings the
+  // per-move coach into view.
   const selectMove = (id: string) => {
     setCursorId(id)
     setPickedSquare(null)
     setMovePicked(id !== ROOT)
-    scrollToCoachRef.current = gameFinished && id !== ROOT
+    if (gameFinished && id !== ROOT) setCoachScrollRequest(n => n + 1)
   }
 
+  // Runs after the render that placed the coach above the report.
   useEffect(() => {
-    if (!scrollToCoachRef.current) return
-    scrollToCoachRef.current = false
+    if (coachScrollRequest === 0) return
     moveCoachRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }, [cursorId])
+  }, [coachScrollRequest])
 
   // The move on the board: its squares are highlighted, and after the game the coach explains it (either side's).
   const selectedNode = cursorId !== ROOT ? tree.nodes[cursorId] : undefined

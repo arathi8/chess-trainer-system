@@ -1,12 +1,14 @@
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import chess
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from services import llm_service  # noqa: E402
 from services.coach_tools import (  # noqa: E402
     CoachToolkit,
     EngineSession,
@@ -214,3 +216,137 @@ def test_toolkit_budget_and_errors():
         assert kit.exhausted
         assert "No more checks" in json.loads(kit.call("square_info", json.dumps({"fen": ITALIAN, "square": "e5"})))["error"]
         assert kit.calls == ["verificou a casa e4", "verificou a casa f6"]
+
+
+# --- the tool-calling loop, with a scripted model ---
+
+class ScriptedClient:
+    """Stands in for the provider: replies with the given messages in order and records each request."""
+
+    def __init__(self, replies):
+        self.replies = list(replies)
+        self.requests = []
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
+
+    def create(self, **request):
+        self.requests.append(request)
+        return SimpleNamespace(choices=[SimpleNamespace(message=self.replies.pop(0))])
+
+
+def model_message(content=None, tool_calls=()):
+    calls = [
+        SimpleNamespace(id=f"call-{i}", type="function", function=SimpleNamespace(name=name, arguments=json.dumps(args)))
+        for i, (name, args) in enumerate(tool_calls)
+    ]
+
+    def dump(exclude_none=True):
+        data = {"role": "assistant", "content": content}
+        if calls:
+            data["tool_calls"] = [
+                {"id": c.id, "type": "function", "function": {"name": c.function.name, "arguments": c.function.arguments}}
+                for c in calls
+            ]
+        return {k: v for k, v in data.items() if v is not None or not exclude_none}
+
+    return SimpleNamespace(content=content, tool_calls=calls or None, model_dump=dump)
+
+
+def scripted_service(replies):
+    service = llm_service.LLMService(provider="gemini", api_key="test-key")
+    service.client = ScriptedClient(replies)
+    return service
+
+
+@needs_stockfish
+def test_tool_loop_runs_the_checks_and_returns_the_answer():
+    service = scripted_service([
+        model_message(tool_calls=[("analyze_move", {"fen": ITALIAN, "move": "Nb8"})]),
+        model_message(content="6... Nb8 ignores the attack on the f6 knight: 7. exf6 wins it."),
+    ])
+    with CoachToolkit() as kit:
+        answer = service.request("Explain 6... Nb8.", kit)
+        assert kit.calls == ["analisou o lance Nb8"]
+
+    assert answer.startswith("6... Nb8 ignores")
+    first, second = service.client.requests
+    assert first["tools"] and "tool_choice" not in first
+    tool_message = second["messages"][-1]
+    assert tool_message["role"] == "tool" and tool_message["tool_call_id"] == "call-0"
+    assert "threats_the_move_ignored" in json.loads(tool_message["content"])
+    assert second["messages"][-2]["tool_calls"][0]["function"]["name"] == "analyze_move"
+
+
+@needs_stockfish
+def test_tool_loop_forces_an_answer_when_the_budget_runs_out():
+    check = ("square_info", {"fen": ITALIAN, "square": "f6"})
+    service = scripted_service([
+        model_message(tool_calls=[check, check]),
+        model_message(content="Final answer."),
+    ])
+    with CoachToolkit(max_calls=2) as kit:
+        assert service.request("Explain.", kit) == "Final answer."
+
+    final = service.client.requests[-1]
+    assert final["tool_choice"] == "none"
+    assert final["messages"][-1] == {"role": "user", "content": llm_service.FINAL_ANSWER_REQUEST}
+
+
+def test_tool_loop_stops_after_the_maximum_rounds(monkeypatch):
+    monkeypatch.setattr(llm_service, "MAX_TOOL_ROUNDS", 2)
+    bad_call = ("no_such_tool", {})
+    service = scripted_service([
+        model_message(tool_calls=[bad_call]),
+        model_message(tool_calls=[bad_call]),
+        model_message(content="Answer without checks."),
+    ])
+    with CoachToolkit() as kit:
+        assert service.request("Explain.", kit) == "Answer without checks."
+    assert len(service.client.requests) == 3
+    assert service.client.requests[-1]["tool_choice"] == "none"
+
+
+def test_a_provider_without_tools_gets_a_plain_answer(monkeypatch):
+    from openai import BadRequestError
+
+    class NoToolsClient(ScriptedClient):
+        def create(self, **request):
+            if "tools" in request:
+                self.requests.append(request)
+                # The fields of the HTTP response the SDK reads when building the error.
+                response = SimpleNamespace(request=None, status_code=400, headers={})
+                raise BadRequestError("tools are not supported", response=response, body=None)
+            return super().create(**request)
+
+    client = NoToolsClient([model_message(content="Plain answer.")])
+    monkeypatch.setattr(llm_service, "OpenAI", lambda **kwargs: client)
+    answer = llm_service.complete_coach_prompt("Explain.", True, 8, provider="gemini", api_key="key")
+    assert answer == llm_service.CoachAnswer("Plain answer.", [])
+    plain_request = client.requests[-1]
+    assert "tools" not in plain_request
+    assert llm_service.ENGINE_TOOLS_RULE not in plain_request["messages"][-1]["content"]
+
+
+def test_without_tools_a_single_plain_request():
+    service = scripted_service([model_message(content="Plain answer.")])
+    assert service.request("Explain.") == "Plain answer."
+    assert "tools" not in service.client.requests[0]
+
+
+def test_prompt_only_shows_the_tools_and_the_rule():
+    move_analysis = {
+        "before_move_analysis": {"fen": ITALIAN, "best_move": "d7d5 (d5)", "evaluation": "-0.04 pawns", "depth": 20, "line": "6...d5"},
+        "after_move_analysis": {
+            "fen": "rnbqk2r/pppp1ppp/5n2/2b1P3/2Bp4/2P2N2/PP3PPP/RNBQK2R w KQkq - 1 7",
+            "best_move": "e5f6 (exf6)", "evaluation": "+5.09 pawns", "depth": 20, "line": "7. exf6 d5 8. fxg7",
+        },
+        "move_classification": "Blunder",
+        "move_delta": 37.0,
+    }
+    answer = llm_service.generate_move_evaluation(move_analysis, provider="prompt")
+    assert "[TOOLS]" in answer.text and "analyze_move" in answer.text
+    assert "check it with a tool" in answer.text
+    assert "Material along the line: White wins 4 points of material" in answer.text
+    assert answer.checks == []
+
+    plain = llm_service.generate_move_evaluation(move_analysis, engine_tools=False, provider="prompt")
+    assert "[TOOLS]" not in plain.text and "check it with a tool" not in plain.text

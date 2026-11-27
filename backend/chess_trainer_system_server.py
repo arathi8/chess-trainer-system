@@ -63,6 +63,8 @@ class MoveEvaluationRequest(BaseModel):
     move_analysis: EngineAnalysisResponse
     # Who played the evaluated move: the user or their opponent
     mover: Literal["user", "opponent"] = "user"
+    # Lets the model check its claims with the engine before answering (services/coach_tools.py)
+    engine_tools: bool = True
     # BYOK settings; an omitted model or base_url falls back to the provider's default
     provider: str = DEFAULT_PROVIDER
     api_key: Optional[str] = None
@@ -71,6 +73,8 @@ class MoveEvaluationRequest(BaseModel):
 
 class MoveEvaluationResponse(BaseModel):
     evaluation: str
+    # The engine checks the model ran while writing, in words, for the user to see
+    engine_checks: list[str] = []
 
 class GameReportMove(BaseModel):
     ply: int
@@ -98,6 +102,7 @@ class GameReportRequest(BaseModel):
     lenient_plies: list[int] = []
     # True for games imported from a PGN rather than played against the engine
     imported: bool = False
+    engine_tools: bool = True
     # BYOK settings, as in MoveEvaluationRequest
     provider: str = DEFAULT_PROVIDER
     api_key: Optional[str] = None
@@ -106,6 +111,7 @@ class GameReportRequest(BaseModel):
 
 class GameReportResponse(BaseModel):
     report: str
+    engine_checks: list[str] = []
 
 class LLMProviderOption(BaseModel):
     label: str
@@ -161,9 +167,10 @@ def llm_providers():
 @app.post("/api/move-evaluation", response_model=MoveEvaluationResponse)
 def move_evaluation(payload: MoveEvaluationRequest):
     try:
-        evaluation = generate_move_evaluation(
+        answer = generate_move_evaluation(
             payload.move_analysis.model_dump(),
             mover=payload.mover,
+            engine_tools=payload.engine_tools,
             provider=payload.provider,
             api_key=payload.api_key,
             model=payload.model,
@@ -176,7 +183,7 @@ def move_evaluation(payload: MoveEvaluationRequest):
     except ValueError as e:
         raise HTTPException(status_code=500, detail=f"LLM configuration error: {e}")
 
-    return MoveEvaluationResponse(evaluation=evaluation)
+    return MoveEvaluationResponse(evaluation=answer.text, engine_checks=answer.checks)
 
 @app.post("/api/game-stats", response_model=GameStatsResponse)
 def game_stats(payload: GameStatsRequest):
@@ -202,13 +209,14 @@ def game_stats(payload: GameStatsRequest):
 def game_report(payload: GameReportRequest):
     """The coach's post-game report, written by the LLM from the stats of /api/game-stats."""
     try:
-        report = generate_game_report(
+        answer = generate_game_report(
             payload.stats,
             result=payload.result,
             termination=payload.termination,
             pgn=payload.pgn,
             lenient_plies=payload.lenient_plies,
             imported=payload.imported,
+            engine_tools=payload.engine_tools,
             provider=payload.provider,
             api_key=payload.api_key,
             model=payload.model,
@@ -223,7 +231,7 @@ def game_report(payload: GameReportRequest):
     except ValueError as e:
         raise HTTPException(status_code=500, detail=f"LLM configuration error: {e}")
 
-    return GameReportResponse(report=report)
+    return GameReportResponse(report=answer.text, engine_checks=answer.checks)
 
 
 if __name__ == "__main__":

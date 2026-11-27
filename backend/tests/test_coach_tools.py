@@ -127,6 +127,28 @@ def test_position_features():
     assert "Black bishop on c8" in features["black"]["minor_pieces_still_at_home"]
 
 
+def test_prompts_state_the_material_outcome_of_engine_lines():
+    from services.llm_service import format_analysis_block
+    from services.report_service import compute_game_stats, generate_report_prompt
+
+    after = chess.Board(ITALIAN)
+    after.push_san("Nb8")
+    block = format_analysis_block({
+        "fen": after.fen(), "best_move": "e5f6 (exf6)", "evaluation": "+5.09 pawns", "depth": 20,
+        "line": "7. exf6 d5 8. fxg7 Rg8 9. Be2",
+    })
+    assert "Material along the line: White wins 4 points of material (7. exf6 takes the Black knight on f6" in block
+
+    blunder = {
+        "ply": 11, "san": "Nb8", "move_classification": "Blunder", "move_delta": 37.0,
+        "before_move_analysis": {"fen": ITALIAN, "best_move": "d7d5 (d5)", "evaluation": "-0.04 pawns", "depth": 20, "line": "6...d5 7. Bb5"},
+        "after_move_analysis": {"fen": after.fen(), "best_move": "e5f6 (exf6)", "evaluation": "+5.09 pawns", "depth": 20, "line": "7. exf6 d5 8. fxg7 Rg8 9. Be2"},
+    }
+    stats = compute_game_stats([blunder], "black")
+    report = generate_report_prompt(stats, result="1-0", termination="resignation")
+    assert "Material along the opponent's continuation: White wins 4 points of material" in report
+
+
 # --- tools with the engine ---
 
 @needs_stockfish

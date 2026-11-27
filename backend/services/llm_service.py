@@ -2,6 +2,7 @@ from typing import Dict, Any, List, Optional
 
 from openai import OpenAI, APIError as OpenAIAPIError
 
+from services.coach_tools import line_outcome_text
 from services.report_service import (
     PGN_NOTATION_RULE,
     generate_report_prompt,
@@ -138,6 +139,8 @@ def format_analysis_block(analysis: Dict[str, Any]) -> str:
     """Formats the analysis summary dictionary into a standardized text block for the LLM."""
     label = analysis.get("label", "POSITION EVALUATION")
     best_move = pgn_move(analysis["fen"], analysis["best_move"]) or analysis["best_move"]
+    # Computed from the line, so the model does not have to read the material balance off it.
+    outcome = line_outcome_text(analysis["fen"], analysis.get("line", ""))
     return (
         f"\n📊 --- {label} ---\n"
         f"[] FEN: {analysis['fen']}\n"
@@ -145,7 +148,8 @@ def format_analysis_block(analysis: Dict[str, Any]) -> str:
         f"📈 Position evaluation for White: {analysis['evaluation']}\n"
         f"🔬 Depth reached: {analysis['depth']} plies\n"
         f"♟️ Line: {analysis['line']}\n"
-        f"---------------------------\n"
+        + (f"⚖️ Material along the line: {outcome}\n" if outcome else "")
+        + "---------------------------\n"
     )
 
 def generate_prompt(move_analysis: Dict[str, Any], mover: str = "user") -> str:

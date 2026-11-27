@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Optional
 
 import chess
 
+from services.coach_tools import line_outcome_text
+
 ERROR_CLASSIFICATIONS = ("Inaccuracy", "Mistake", "Blunder")
 SERIOUS_CLASSIFICATIONS = ("Mistake", "Blunder")
 CLASSIFICATION_ORDER = ("Best Move", "Good Move", "Inaccuracy", "Mistake", "Blunder")
@@ -363,6 +365,11 @@ def generate_report_prompt(
             f"    FEN before: {km['fen']}",
             f"    Best move: {pgn_move(km['fen'], km['best_move']) or km['best_move']} | eval before: {km['eval_before']} | best line: {km['best_line']}",
             f"    Eval after played move: {km['eval_after']} | opponent's best continuation: {km['refutation_line']}",
+            *(
+                [f"    Material along the opponent's continuation: {outcome}"]
+                if (outcome := line_outcome_text(km.get("fen_after", ""), km.get("refutation_line") or ""))
+                else []
+            ),
             f"    Themes: {themes}",
         ]
 

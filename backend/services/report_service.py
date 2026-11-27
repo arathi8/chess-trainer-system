@@ -128,6 +128,55 @@ def move_number_label(fen: str) -> str:
     return f"{board.fullmove_number}{'.' if board.turn == chess.WHITE else '...'}"
 
 
+# --- PGN notation in prompts ---
+
+# The interface turns moves written like this into links that play them on the board, so the coach
+# must cite moves with their numbers, exactly as the data gives them.
+PGN_NOTATION_RULE = (
+    "Move notation: whenever you mention a move or a sequence of moves, write it in PGN notation (SAN with move "
+    'numbers), copied from the data, e.g. "14. Nxe5", "14... Nf6" or "14. Nxe5 dxe5 15. Qh5". Always put the move '
+    'number before the first move of a sequence, with "..." when it starts with a Black move. Keep a sequence '
+    "together, without comments in the middle, and do not put moves in backticks or code blocks."
+)
+
+
+def numbered_san(board: chess.Board, move: chess.Move) -> str:
+    """The move on the board in PGN notation with its number: '14. Nxe5' or '14... Nf6'."""
+    return f"{board.fullmove_number}{'.' if board.turn == chess.WHITE else '...'} {board.san(move)}"
+
+
+def pgn_move(fen: str, best_move: str) -> Optional[str]:
+    """An analysis' best move ('e2e4 (e4)') in PGN notation from its position; None if it is not legal there."""
+    uci = parse_uci_prefix(best_move)
+    if not uci:
+        return None
+    try:
+        board = chess.Board(fen)
+        move = chess.Move.from_uci(uci)
+    except ValueError:
+        return None
+    return numbered_san(board, move) if move in board.legal_moves else None
+
+
+def played_move(fen_before: str, fen_after: str) -> Optional[str]:
+    """The move that leads from one position to the next, in PGN notation; None if no legal move does."""
+    try:
+        board = chess.Board(fen_before)
+        target = chess.Board(fen_after)
+    except ValueError:
+        return None
+    for move in board.legal_moves:
+        board.push(move)
+        # En passant squares are left out: FENs only record them when a capture is possible.
+        reached = (board.board_fen(), board.turn, board.castling_rights) == (
+            target.board_fen(), target.turn, target.castling_rights
+        )
+        board.pop()
+        if reached:
+            return numbered_san(board, move)
+    return None
+
+
 def compute_game_stats(moves: List[Dict[str, Any]], user_color: str, total_user_moves: Optional[int] = None) -> Dict[str, Any]:
     counts = Counter({name: 0 for name in CLASSIFICATION_ORDER})
     phases: Dict[str, Dict[str, Any]] = {}
@@ -276,6 +325,7 @@ def generate_report_prompt(
         "Base every claim on the data below. Only mention moves that appear in it. For opening theory, do not invent "
         "move sequences beyond the reference line and theoretical moves given, and name variations only when confident. "
         "Be encouraging but honest and concise.",
+        PGN_NOTATION_RULE,
         "",
         "--- GAME ---",
         f"User played: {stats['user_color']}",
@@ -311,7 +361,7 @@ def generate_report_prompt(
         lines += [
             f"[{i}] Move {km['move_number']} {km['san']} ({km['classification']}, -{km['win_percent_loss']}% win chance, {km['phase']})",
             f"    FEN before: {km['fen']}",
-            f"    Best move: {km['best_move']} | eval before: {km['eval_before']} | best line: {km['best_line']}",
+            f"    Best move: {pgn_move(km['fen'], km['best_move']) or km['best_move']} | eval before: {km['eval_before']} | best line: {km['best_line']}",
             f"    Eval after played move: {km['eval_after']} | opponent's best continuation: {km['refutation_line']}",
             f"    Themes: {themes}",
         ]

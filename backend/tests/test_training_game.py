@@ -21,6 +21,8 @@ from services.report_service import (  # noqa: E402
     game_phase,
     generate_report_prompt,
     move_accuracy,
+    pgn_move,
+    played_move,
 )
 
 
@@ -276,3 +278,36 @@ def test_semantic_prompt_for_opponent_move():
     assert "played by their OPPONENT" in opponent_prompt
     assert "BEFORE OPPONENT MOVE" in opponent_prompt
     assert "System Classification of the opponent's move: Blunder" in opponent_prompt
+
+
+# --- PGN notation in prompts (the interface links these moves) ---
+
+def test_pgn_move_numbers_the_best_move():
+    assert pgn_move(chess.STARTING_FEN, "e2e4 (e4)") == "1. e4"
+    assert pgn_move(HUNG_BISHOP["after_move_analysis"]["fen"], "b7a6 (bxa6)") == "2... bxa6"
+    assert pgn_move(chess.STARTING_FEN, "e2e5 (e5)") is None  # not legal there
+    assert pgn_move(chess.STARTING_FEN, "None") is None
+
+
+def test_played_move_from_the_two_positions():
+    before, after = HUNG_BISHOP["before_move_analysis"]["fen"], HUNG_BISHOP["after_move_analysis"]["fen"]
+    assert played_move(before, after) == "2. Ba6"
+    assert played_move(GOOD_MOVE["before_move_analysis"]["fen"], GOOD_MOVE["after_move_analysis"]["fen"]) == "1. e4"
+    assert played_move(before, before) is None
+    assert played_move("not a fen", after) is None
+
+
+def test_semantic_prompts_ask_for_pgn_notation():
+    from services.llm_service import generate_prompt
+
+    move_prompt = generate_prompt(HUNG_BISHOP)
+    assert "PGN notation" in move_prompt
+    assert "Move played by the user: 2. Ba6" in move_prompt
+    assert "Suggested best move: 2. Nf3" in move_prompt
+    assert "Suggested best move: 2... bxa6" in move_prompt
+    assert "Move played by the opponent: 2. Ba6" in generate_prompt(HUNG_BISHOP, mover="opponent")
+
+    stats = compute_game_stats([HUNG_BISHOP, MISSED_MATE, GOOD_MOVE], "white")
+    report_prompt = generate_report_prompt(stats, result="0-1", termination="resignation")
+    assert "PGN notation" in report_prompt
+    assert "Best move: 4. Qxf7#" in report_prompt

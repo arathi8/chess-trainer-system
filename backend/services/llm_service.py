@@ -2,7 +2,12 @@ from typing import Dict, Any, List, Optional
 
 from openai import OpenAI, APIError as OpenAIAPIError
 
-from services.report_service import generate_report_prompt
+from services.report_service import (
+    PGN_NOTATION_RULE,
+    generate_report_prompt,
+    pgn_move,
+    played_move,
+)
 
 SYSTEM_PROMPT = "You are a chess expert assistant. Respond using Markdown formatting."
 TIMEOUT = 60.0
@@ -132,10 +137,11 @@ def complete_prompt(
 def format_analysis_block(analysis: Dict[str, Any]) -> str:
     """Formats the analysis summary dictionary into a standardized text block for the LLM."""
     label = analysis.get("label", "POSITION EVALUATION")
+    best_move = pgn_move(analysis["fen"], analysis["best_move"]) or analysis["best_move"]
     return (
         f"\n📊 --- {label} ---\n"
         f"[] FEN: {analysis['fen']}\n"
-        f"👉 Suggested best move: {analysis['best_move']}\n"
+        f"👉 Suggested best move: {best_move}\n"
         f"📈 Position evaluation for White: {analysis['evaluation']}\n"
         f"🔬 Depth reached: {analysis['depth']} plies\n"
         f"♟️ Line: {analysis['line']}\n"
@@ -168,6 +174,12 @@ def generate_prompt(move_analysis: Dict[str, Any], mover: str = "user") -> str:
             "Explain it like a chess coach, comparing the suggested best move with the played move. "
             "Focus on a short answer."
         )
+
+    prompt += " " + PGN_NOTATION_RULE
+
+    played = played_move(before["fen"], after["fen"])
+    if played:
+        prompt += f"\n\n♟️ Move played by the {'opponent' if by_opponent else 'user'}: {played}\n"
 
     prompt += "\n" + format_analysis_block(before)
     prompt += "\n" + format_analysis_block(after)

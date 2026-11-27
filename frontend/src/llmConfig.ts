@@ -20,6 +20,9 @@ export interface LLMConfig {
   api_key: string
   model: string
   base_url: string
+  // Lets the coach check its claims with Stockfish before answering (experimental). Older saved
+  // settings lack it: the backend then defaults to on.
+  engine_tools?: boolean
 }
 
 export async function fetchLLMProviders(): Promise<LLMProviderCatalog> {

@@ -10,6 +10,7 @@ import MoveList from './MoveList'
 import BoardControls from './BoardControls'
 import ConfirmDialog from './ConfirmDialog'
 import CoachMarkdown from './CoachMarkdown'
+import EngineChecks from './EngineChecks'
 import { useFitSquare } from '../useFitSquare'
 import { useSlideOnShift } from '../useSlideOnShift'
 import { useExitTransition } from '../useExitTransition'
@@ -190,6 +191,8 @@ export default function GameBoard({
 
   // The coach's explanations, per move; explainingId is the move being explained.
   const [explanations, setExplanations] = useState<Record<string, string>>({})
+  // The engine checks the coach ran for each explanation (by move id).
+  const [explanationChecks, setExplanationChecks] = useState<Record<string, string[]>>({})
   const [explainingId, setExplainingId] = useState<string | null>(null)
 
   const gameRef = useRef<Chess>(game)
@@ -397,7 +400,10 @@ export default function GameBoard({
   // The coach explains one analysed move (either side's), anchored on its engine analysis.
   const explainMove = async (node: MoveNode) => {
     if (!isAnalysed(node)) return
-    const explain = (text: string) => setExplanations(prev => ({ ...prev, [node.id]: text }))
+    const explain = (text: string, checks: string[] = []) => {
+      setExplanations(prev => ({ ...prev, [node.id]: text }))
+      setExplanationChecks(prev => ({ ...prev, [node.id]: checks }))
+    }
 
     setExplainingId(node.id)
     try {
@@ -416,7 +422,7 @@ export default function GameBoard({
         explain(data?.detail ?? `Não foi possível obter a análise: erro HTTP ${response.status}`)
         return
       }
-      explain(data?.evaluation || 'Avaliação semântica indisponível.')
+      explain(data?.evaluation || 'Avaliação semântica indisponível.', data?.engine_checks ?? [])
     } catch (err) {
       console.error('Move evaluation error:', err)
       explain('Não foi possível obter a análise no momento.')
@@ -469,7 +475,7 @@ export default function GameBoard({
         setCoachReport({ text: null, error, loading: false })
         return
       }
-      setCoachReport({ text: data.report, error: null, loading: false })
+      setCoachReport({ text: data.report, error: null, loading: false, checks: data.engine_checks ?? [] })
     } catch (err) {
       console.error('Game report error:', err)
       setCoachReport({ text: null, error: 'Não foi possível gerar o relatório no momento.', loading: false })
@@ -711,18 +717,21 @@ export default function GameBoard({
       )}
 
       {explanation && explainingId !== coachNode.id && (
-        <div className="message markdown-body">
-          {/* Its sequences start on the explained move's line; a click keeps the coach on that move
-              while the board shows the line. */}
-          <CoachMarkdown
-            text={explanation}
-            playable={(startPly, sans) => playableMoves(tree, startPly, sans, coachNode.id)}
-            onPlayMove={move => {
-              setCoachHoldId(coachNode.id)
-              playPgnMove(move, coachNode.id)
-            }}
-          />
-        </div>
+        <>
+          <div className="message markdown-body">
+            {/* Its sequences start on the explained move's line; a click keeps the coach on that move
+                while the board shows the line. */}
+            <CoachMarkdown
+              text={explanation}
+              playable={(startPly, sans) => playableMoves(tree, startPly, sans, coachNode.id)}
+              onPlayMove={move => {
+                setCoachHoldId(coachNode.id)
+                playPgnMove(move, coachNode.id)
+              }}
+            />
+          </div>
+          <EngineChecks checks={explanationChecks[coachNode.id]} />
+        </>
       )}
     </div>
   )

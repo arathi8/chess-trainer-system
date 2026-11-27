@@ -308,3 +308,13 @@ button {
 .pgn-move{display:inline;background:none;border:0;padding:0 2px;margin:0 -1px;font:inherit;color:var(--gold-light);border-bottom:1px dotted #b8955799;border-radius:3px;cursor:pointer;transition:background-color .12s ease}
 .pgn-move:hover{background:#b8955724;border-bottom-color:transparent}
 .pgn-move:focus-visible{outline:1px solid var(--gold);outline-offset:1px}
+
+/* The engine checks behind a coach text (EngineChecks), folded under it. */
+.engine-checks{margin:-10px 0 16px;font-size:10px;color:#7f897d}
+.engine-checks summary{cursor:pointer;width:fit-content}
+.engine-checks summary:hover{color:#aeb3a9}
+.engine-checks ul{margin:6px 0 0;padding-left:16px;line-height:1.6}
+.settings-form .settings-check{flex-direction:row;align-items:flex-start;gap:10px;text-align:left}
+.settings-form .settings-check input{width:auto;margin-top:3px;accent-color:var(--gold)}
+.settings-check small{display:block;color:#8b9487;font-size:11px;margin-top:3px}
+.settings-check span>small:first-child{display:inline;margin:0}

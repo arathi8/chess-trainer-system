@@ -1,4 +1,5 @@
 import CoachMarkdown from './CoachMarkdown'
+import EngineChecks from './EngineChecks'
 import type { PgnPlayable } from './CoachMarkdown'
 import type { PgnMoveRef } from '../pgnLinks'
 
@@ -53,6 +54,8 @@ export interface CoachReport {
   text: string | null
   error: string | null
   loading: boolean
+  // Engine checks the coach ran while writing it
+  checks?: string[]
 }
 
 const PHASE_LABELS: Record<string, string> = {
@@ -197,9 +200,12 @@ export default function GameReport({
           )}
 
           {coach.text && !coach.loading && (
-            <div className="message markdown-body">
-              <CoachMarkdown text={coach.text} playable={pgnPlayable} onPlayMove={onPlayPgnMove} />
-            </div>
+            <>
+              <div className="message markdown-body">
+                <CoachMarkdown text={coach.text} playable={pgnPlayable} onPlayMove={onPlayPgnMove} />
+              </div>
+              <EngineChecks checks={coach.checks} />
+            </>
           )}
 
           {coach.error && !coach.loading && (

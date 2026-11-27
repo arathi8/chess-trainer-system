@@ -8,7 +8,8 @@ const emptyConfig = (provider: string): LLMConfig => ({
   provider,
   api_key: '',
   model: '',
-  base_url: ''
+  base_url: '',
+  engine_tools: true
 })
 
 interface LLMSettingsFormProps {
@@ -35,7 +36,8 @@ function LLMSettingsForm({ catalog, config, onSave }: LLMSettingsFormProps) {
       provider: draft.provider,
       api_key: draft.api_key.trim(),
       model: draft.model.trim(),
-      base_url: draft.base_url.trim()
+      base_url: draft.base_url.trim(),
+      engine_tools: draft.engine_tools !== false
     })
   }
 
@@ -85,6 +87,18 @@ function LLMSettingsForm({ catalog, config, onSave }: LLMSettingsFormProps) {
               onChange={e => updateField('base_url', e.target.value)}
               placeholder={defaults.base_url}
             />
+          </label>
+
+          <label className="settings-check">
+            <input
+              type="checkbox"
+              checked={draft.engine_tools !== false}
+              onChange={e => setDraft(prev => ({ ...prev, engine_tools: e.target.checked }))}
+            />
+            <span>
+              Conferir as afirmações com o Stockfish <small>(experimental)</small>
+              <small>O treinador consulta o motor antes de afirmar o que um lance ganha, perde ou ameaça. Mais preciso, porém mais lento.</small>
+            </span>
           </label>
         </>
       ) : (

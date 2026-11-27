@@ -1,4 +1,6 @@
-import ReactMarkdown from 'react-markdown'
+import CoachMarkdown from './CoachMarkdown'
+import type { PgnPlayable } from './CoachMarkdown'
+import type { PgnMoveRef } from '../pgnLinks'
 
 export interface PhaseStats {
   moves: number
@@ -101,6 +103,9 @@ interface GameReportProps {
   statsLoading: boolean
   coach: CoachReport
   message: string | null
+  // The moves the coach cites in PGN become links to their positions.
+  pgnPlayable: PgnPlayable
+  onPlayPgnMove: (move: PgnMoveRef) => void
   onSelectMoment: (fen: string, ply: number) => void
   onRetry: () => void
   onConfigureLLM: () => void
@@ -112,6 +117,8 @@ export default function GameReport({
   statsLoading,
   coach,
   message,
+  pgnPlayable,
+  onPlayPgnMove,
   onSelectMoment,
   onRetry,
   onConfigureLLM
@@ -191,7 +198,7 @@ export default function GameReport({
 
           {coach.text && !coach.loading && (
             <div className="message markdown-body">
-              <ReactMarkdown>{coach.text}</ReactMarkdown>
+              <CoachMarkdown text={coach.text} playable={pgnPlayable} onPlayMove={onPlayPgnMove} />
             </div>
           )}
 

@@ -9,15 +9,17 @@ import GameReport from './GameReport'
 import MoveList from './MoveList'
 import BoardControls from './BoardControls'
 import ConfirmDialog from './ConfirmDialog'
+import CoachMarkdown from './CoachMarkdown'
 import { useFitSquare } from '../useFitSquare'
 import { useSlideOnShift } from '../useSlideOnShift'
 import { useExitTransition } from '../useExitTransition'
 import type { CoachReport, GameStats } from './GameReport'
 import { API_BASE_URL } from '../api'
 import type { LLMConfig } from '../llmConfig'
-import ReactMarkdown from 'react-markdown'
 import { ROOT, addMove, fenAt, lineEnd, mainline, moveNumberLabel, navigate, plyFromFen, setAnalysis, treeFromGame } from '../moveTree'
 import type { MoveAnalysis, MoveNode, MoveTree, Navigation } from '../moveTree'
+import { playableMoves, resolvePgnLine } from '../pgnLinks'
+import type { PgnMoveRef } from '../pgnLinks'
 
 type PlayerColor = 'white' | 'black'
 // training: play Stockfish with feedback hidden until the end; review: analyse an imported PGN
@@ -173,6 +175,9 @@ export default function GameBoard({
   const [movePicked, setMovePicked] = useState(false)
   // Bumped by each pick in the history, even of the move already selected: scrolls to the coach.
   const [coachScrollRequest, setCoachScrollRequest] = useState(0)
+  // The move the coach stays on after one of its PGN links is clicked: the board then shows the line
+  // it cites, which the coach keeps explaining until the user picks a move in the history.
+  const [coachHoldId, setCoachHoldId] = useState<string | null>(null)
   // Click-to-move: the square of the piece the user clicked, waiting for a target square.
   const [pickedSquare, setPickedSquare] = useState<Square | null>(null)
   const [reportMessage, setReportMessage] = useState<string | null>(null)
@@ -603,6 +608,7 @@ export default function GameBoard({
   // per-move coach into view.
   const selectMove = (id: string) => {
     setCursorId(id)
+    setCoachHoldId(null)
     setPickedSquare(null)
     setMovePicked(id !== ROOT)
     if (gameFinished && id !== ROOT) setCoachScrollRequest(n => n + 1)
@@ -641,11 +647,40 @@ export default function GameBoard({
     boardHandlersRef.current = { onDrop, onSquareClick }
   })
 
+  // A move the coach cites in PGN: its sequence is added to the history up to that move (reusing the
+  // moves already there), the board shows that position, and the new moves are classified one at a
+  // time (each analysis starts a Stockfish process).
+  const playPgnMove = (move: PgnMoveRef, contextId?: string) => {
+    const line = resolvePgnLine(treeRef.current, move.startPly, move.sans, contextId)
+    if (!line || move.index >= line.moves.length) return
+
+    let id = line.parentId
+    const added: string[] = []
+    updateTree(current => {
+      let next = current
+      for (const played of line.moves.slice(0, move.index + 1)) {
+        const result = addMove(next, id, played)
+        if (result.tree !== next) added.push(result.id)
+        next = result.tree
+        id = result.id
+      }
+      return next
+    })
+    setCursorId(id)
+    setPickedSquare(null)
+    setMovePicked(true)
+    void (async () => {
+      for (const nodeId of added) await requestEngineAnalysis(nodeId)
+    })()
+  }
+
+
   // The per-move coach, above the report: shown when the user picks a move that is already
   // classified, whether or not the report is ready. It fades in when it appears and stays in place
   // (no fade) while the user moves between classified moves; when it goes away it fades out
   // showing the move it had.
-  const pickedClassified = gameFinished && movePicked && selectedNode?.analysis ? selectedNode : undefined
+  const heldNode = coachHoldId ? tree.nodes[coachHoldId] : undefined
+  const pickedClassified = heldNode ?? (gameFinished && movePicked && selectedNode?.analysis ? selectedNode : undefined)
   const { value: coachNode, leaving: coachLeaving } = useExitTransition(pickedClassified, COACH_FADE_OUT_MS)
   const explanation = coachNode && explanations[coachNode.id]
   const moveCoach = coachNode && (
@@ -653,7 +688,7 @@ export default function GameBoard({
       <span className="eyebrow small">ANÁLISE POR LANCE</span>
 
       <p className="move-coach-target">
-        Lance selecionado: <b>{moveNumberLabel(coachNode.ply)} {coachNode.san}</b>
+        {heldNode ? 'Lance analisado' : 'Lance selecionado'}: <b>{moveNumberLabel(coachNode.ply)} {coachNode.san}</b>
         {' '}({isUserPly(coachNode.ply) ? 'seu' : 'do oponente'})
       </p>
 
@@ -677,7 +712,16 @@ export default function GameBoard({
 
       {explanation && explainingId !== coachNode.id && (
         <div className="message markdown-body">
-          <ReactMarkdown>{explanation}</ReactMarkdown>
+          {/* Its sequences start on the explained move's line; a click keeps the coach on that move
+              while the board shows the line. */}
+          <CoachMarkdown
+            text={explanation}
+            playable={(startPly, sans) => playableMoves(tree, startPly, sans, coachNode.id)}
+            onPlayMove={move => {
+              setCoachHoldId(coachNode.id)
+              playPgnMove(move, coachNode.id)
+            }}
+          />
         </div>
       )}
     </div>
@@ -852,6 +896,8 @@ export default function GameBoard({
                   statsLoading={statsLoading}
                   coach={coachReport}
                   message={reportMessage}
+                  pgnPlayable={(startPly, sans) => playableMoves(tree, startPly, sans)}
+                  onPlayPgnMove={move => playPgnMove(move)}
                   onSelectMoment={(_fen, ply) => {
                     const node = mainline(tree).find(move => move.ply === ply)
                     if (node) selectMove(node.id)

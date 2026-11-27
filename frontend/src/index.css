@@ -303,3 +303,8 @@ button {
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:#8b948959;border-radius:3px}
 ::-webkit-scrollbar-thumb:hover{background:#8b94898c}
+
+/* Moves the coach cites in PGN (CoachMarkdown): links that play them on the board. */
+.pgn-move{display:inline;background:none;border:0;padding:0 2px;margin:0 -1px;font:inherit;color:var(--gold-light);border-bottom:1px dotted #b8955799;border-radius:3px;cursor:pointer;transition:background-color .12s ease}
+.pgn-move:hover{background:#b8955724;border-bottom-color:transparent}
+.pgn-move:focus-visible{outline:1px solid var(--gold);outline-offset:1px}

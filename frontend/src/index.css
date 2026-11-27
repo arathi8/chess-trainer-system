@@ -106,7 +106,7 @@ button {
 .compact .brand-mark{font-size:25px}
 .icon-btn,.dots{background:none;border:0;color:#8d958b}
 
-.game-layout{display:grid;grid-template-columns:270px minmax(500px,1fr) 330px;max-width:1450px;margin:0 auto;min-height:calc(100vh - 76px)}
+.game-layout{display:grid;grid-template-columns:270px minmax(500px,1fr) 330px;grid-template-rows:minmax(0,1fr);max-width:1450px;margin:0 auto;min-height:calc(100vh - 76px)}
 .history-panel,.chat-panel{background:#181b19;border-right:1px solid #2a2e2a}
 .chat-panel{border-right:0;border-left:1px solid #2a2e2a;display:flex;flex-direction:column}
 .panel-title,.chat-head{padding:26px 22px 20px;display:flex;justify-content:space-between;align-items:flex-start}
@@ -129,23 +129,28 @@ button {
 .tag.mistake{background:#e58f2a;color:#fff}
 .tag.blunder{background:#ca3431;color:#fff}
 
-.center-stage{padding:33px clamp(24px,4vw,70px);max-width:780px;margin:0 auto;width:100%}
-.stage-head{display:flex;justify-content:space-between;align-items:end;margin-bottom:24px}
+.center-stage{padding:24px clamp(24px,4vw,70px) 16px;max-width:780px;margin:0 auto;width:100%;min-height:0;display:flex;flex-direction:column}
+.stage-head{display:flex;justify-content:space-between;align-items:end;margin-bottom:16px}
 .stage-head h1{font-size:25px;margin:10px 0 0;font-weight:500}
 .players{display:flex;justify-content:space-between;align-items:center;margin-bottom:11px}
 .players>div:first-child{display:flex;align-items:center;gap:10px}
 .player-piece{font-size:25px}
+.players small.thinking{color:#d0af68}
 .players b{display:block;font-size:12px;font-weight:600}
 .players small{display:block;color:#767e74;font-size:10px;margin-top:3px}
 
-.board-wrap{position:relative;padding-left:20px;padding-bottom:20px;max-width:600px;margin:0 auto}
+/* The opponent, the board, the player and the controls, centred in the room left; the board is
+   the largest square that fits (--board-size, from useFitSquare), so the centre never scrolls. */
+.board-area{flex:1 1 0;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.board-area>*{width:var(--board-size,100%);flex-shrink:0}
+.board-wrap{position:relative;padding-left:20px;padding-bottom:20px}
 .chessboard-container{box-shadow:0 14px 35px #0008;border:7px solid #28281f;}
 .rank-labels{position:absolute;left:3px;top:7px;bottom:27px;display:flex;flex-direction:column;justify-content:space-around;color:#8b7044;font-size:10px}
 .file-labels{position:absolute;bottom:1px;left:26px;right:7px;display:flex;justify-content:space-around;color:#8b7044;font-size:10px}
 .board-controls{display:flex;align-items:center;justify-content:center;gap:8px;margin:24px 0;position:relative}
 .board-controls button{background:#202520;border:1px solid #30372f;color:#9ca59a;border-radius:5px;padding:7px 9px;display:grid;place-items:center}
 .turn-label{position:absolute;right:0;color:#6e776d;font-size:9px;letter-spacing:1px}
-.bottom{margin-top:0}
+.players.bottom{margin:11px 0 0}
 
 .chat-head{align-items:center;padding-bottom:17px;border-bottom:1px solid #2a2e2a}
 .bot-avatar{display:grid;place-items:center;background:#b89557;color:#1e211a;border-radius:50%;width:33px;height:33px;margin-right:10px}
@@ -182,11 +187,10 @@ button {
 .report-error{background:#3d2020;border:1px solid #5a2a2a;border-radius:6px;padding:10px 12px;margin-top:14px;font-size:11px;color:#ff9b9b}
 .report-error p{margin:0 0 10px}
 .report-error>div{display:flex;gap:8px;flex-wrap:wrap}
-.move-coach{margin-top:4px;scroll-margin-top:12px}
+.move-coach{margin:0 0 22px;padding-bottom:18px;border-bottom:1px solid #2a2e2a;scroll-margin-top:12px}
 .move-coach-target{font-size:11px;line-height:1.5;color:#aeb3a9;margin:8px 0 10px}
 .move-coach-target b{color:var(--gold-light);font-weight:600}
 .move-coach-btn{width:100%;justify-content:center}
-.move-row button.selected-move{background:#2d3327;color:var(--gold-light);border-radius:4px;box-shadow:inset 0 0 0 1px #5a4c33}
 
 /* Fixed-height game screen: each column scrolls on its own, so the report panel scrolls inside itself */
 .game-shell{height:100vh;display:flex;flex-direction:column;overflow:hidden}
@@ -234,7 +238,68 @@ button {
   .game-layout{display:flex;flex-direction:column}
   .history-panel{order:2;border-right:0;border-top:1px solid #2a2e2a}
   .center-stage{order:1;padding:24px 16px}
+  .board-area{flex:none}
+  .board-area>*{width:min(100%,560px)}
   .chat-panel{order:3;border-left:0;border-top:1px solid #2a2e2a;min-height:460px;overflow:visible}
   .game-shell{height:auto;overflow:visible}
   .chat-content{overflow:visible}
 }
+.board-controls{display:flex;justify-content:center;gap:6px;margin:12px 0 0}
+.board-controls .outline-btn{padding:8px 0;width:64px}
+.board-controls .outline-btn:disabled{opacity:.35;cursor:default}
+.move-row .ellipsis{color:#5d655b}
+.variation{margin:2px 0 6px 30px;padding:3px 0 3px 8px;border-left:2px solid #3a4038}
+.variation-line{display:flex;flex-wrap:wrap;align-items:center;line-height:1.8}
+.variation-move,.variation-nested{display:inline-flex;flex-wrap:wrap;align-items:center}
+.variation-nested{color:#5d655b;font-size:11px;margin:0 2px}
+.variation button{background:none;border:0;color:#8b9487;font-size:11px;padding:1px 3px;border-radius:3px;display:inline-flex;align-items:center;gap:4px}
+/* Hovering a move lights it with a faint gold tint (distinct from the neutral selection), so it
+   reads as clickable; an unclassified move's text also brightens. */
+.moves button{transition:background-color .12s ease,color .12s ease}
+.move-row button:not(:disabled):hover,.variation button:hover,.start-move:hover{background:#b8955724;border-radius:4px}
+/* Only unclassified moves (no classification title) brighten: classified ones keep their colour. */
+.move-row button:not(:disabled):not([title]):hover,.variation button:not([title]):hover{color:#e5e4db}
+.start-move:hover{color:#aeb3a9}
+.move-row button:disabled{cursor:default}
+/* History: the current move gets a faint background, so it does not compete with the classification colours. */
+.moves .selected-move{background:#ffffff0d;border-radius:4px;color:#e5e4db}
+.start-move.selected-move{color:#aeb3a9}
+/* After .selected-move: a classified move keeps its colour when selected. */
+.moves .move-best{color:#95bb4a}
+.moves .move-good{color:#7fa8cc}
+.moves .move-inaccuracy{color:#e9bd5a}
+.moves .move-mistake{color:#e8913a}
+.moves .move-blunder{color:#e0524f}
+
+/* Coach panel animations. The move coach fades in and out quickly, and the report slides to make
+   room for it (useSlideOnShift). The report's sections and the texts inside the coach rise in,
+   the stats cards one after another. */
+@keyframes block-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+@keyframes block-out{from{opacity:1;transform:none}to{opacity:0;transform:translateY(-4px)}}
+/* The text is fully opaque at 35% of the time: only the movement keeps easing to the end, so a
+   long rise never leaves the text half-transparent (blurry-looking) for long. */
+@keyframes block-rise{from{opacity:0;transform:translateY(10px)}35%{opacity:1}to{opacity:1;transform:none}}
+.move-coach{animation:block-in .3s ease-out both}
+/* Leaving (COACH_FADE_OUT_MS in GameBoard.tsx): fades out, then the report slides up into its place. */
+.move-coach.leaving{animation:block-out .25s ease-in both;pointer-events:none}
+.move-coach .message,.game-report>*{animation:block-rise .3s cubic-bezier(.22,.61,.36,1) both}
+.game-report>.report-opening{animation-delay:.08s}
+.game-report>.report-counts{animation-delay:.16s}
+.game-report>.report-phases{animation-delay:.24s}
+.game-report>.report-moments{animation-delay:.32s}
+
+/* Dialogs fade in, the card rising slightly. */
+@keyframes fade-in{from{opacity:0}to{opacity:1}}
+.modal-backdrop{animation:fade-in .2s ease-out both}
+.modal-card{animation:block-rise .2s cubic-bezier(.20,.40,.10,.5) both}
+
+@media (prefers-reduced-motion:reduce){
+  .move-coach,.move-coach.leaving,.move-coach .message,.game-report>*,.modal-backdrop,.modal-card{animation:none}
+}
+
+/* Thin scrollbars without a track: just a translucent grey thumb over the panel. */
+*{scrollbar-width:thin;scrollbar-color:#8b948959 transparent}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#8b948959;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#8b94898c}

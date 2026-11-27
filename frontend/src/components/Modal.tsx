@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 
 const ArrowLeft = ({ size = 17 }: { size?: number }) => (
@@ -15,8 +16,17 @@ interface ModalProps {
 }
 
 export default function Modal({ eyebrow, title, description, onCancel, children }: ModalProps) {
+  // Escape cancels, as the "Cancelar" link does.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onCancel()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onCancel])
+
   return (
-    <div style={{
+    <div className="modal-backdrop" style={{
       position: 'fixed',
       inset: 0,
       background: 'rgba(0, 0, 0, 0.85)',
@@ -25,7 +35,7 @@ export default function Modal({ eyebrow, title, description, onCancel, children 
       justifyContent: 'center',
       zIndex: 1000
     }}>
-      <div style={{
+      <div className="modal-card" role="dialog" aria-modal="true" aria-label={title} style={{
         background: 'var(--panel)',
         border: '1px solid var(--line)',
         borderRadius: '12px',
